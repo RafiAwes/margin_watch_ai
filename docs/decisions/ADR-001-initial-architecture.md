@@ -24,7 +24,7 @@ The system requires:
 
 We have decided on the following initial architecture:
 1. **Decoupled Architecture:** Separate Next.js frontend and Django REST Framework (DRF) backend communicating over a versioned REST API (`/api/v1/`).
-2. **Backend Stack:** Python with Django and Django REST Framework.
+2. **Backend Stack:** Python 3.15 with Django and Django REST Framework.
 3. **Frontend Stack:** Next.js (App Router), TypeScript, and Tailwind CSS.
 4. **Initial Database:** SQLite for local development (Phases 1–7), with a direct migration path to PostgreSQL for production deployments (Phase 8+).
 5. **Deterministic Financial Engine:** All financial calculations and risk classifications are implemented as pure, deterministic Python functions using exact decimal arithmetic (`Decimal`).

@@ -34,7 +34,7 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
   2. Define authoritative mathematical formulas and precedence rules (`docs/financial-rules.md`).
   3. Define system architecture, data models, and API blueprints (`docs/architecture.md`, `docs/data-model.md`, `docs/api-specification.md`).
   4. Define security matrix, testing strategy, and AI advisor specifications (`docs/security-and-permissions.md`, `docs/testing-strategy.md`, `docs/ai-risk-advisor.md`).
-  5. Author architectural decision record (`docs/decisions/ADR-001-initial-architecture.md`).
+  5. Author architectural decision records (`docs/decisions/ADR-001-initial-architecture.md`, `docs/decisions/ADR-002-financial-rules-and-risk-classification.md`).
   6. Establish `.gitignore`, `.env.example`, `CONTRIBUTING.md`, and top-level `README.md`.
 * **Deliverables:** Complete documentation suite and clean repo scaffolding.
 * **Definition of Done:** All documentation files cross-checked for consistency; zero premature source code written.
@@ -45,7 +45,7 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
 * **Status:** Planned Next Phase
 * **Objective:** Initialize clean Django and Next.js projects inside their respective directories without adding custom domain logic.
 * **Tasks:**
-  1. Initialize Python virtual environment and install Django, Django REST Framework, and `django-cors-headers`.
+  1. Activate Python 3.15 environment (Conda `projectfinance` or virtualenv) and install Django, Django REST Framework, and `django-cors-headers`.
   2. Initialize Django project structure inside `backend/` with standard configuration.
   3. Initialize Next.js project with TypeScript and Tailwind CSS inside `frontend/`.
   4. Configure local environment loading (`.env`) for both frontend and backend.

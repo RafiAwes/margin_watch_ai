@@ -66,10 +66,10 @@ Keep commits small, atomic, and focused on a single logical change. Avoid monoli
 
 Before committing changes to version control, verify the following:
 
-- [ ] **Tests Pass**: Run the backend and frontend test suites locally.
+- [ ] **Tests Pass**: Run the backend (Python 3.15) and frontend test suites locally.
 - [ ] **No Secrets**: Ensure no API keys, database credentials, or secret keys are present in code or configuration.
 - [ ] **Documentation Aligned**: If an API endpoint, data field, or formula was altered, corresponding documentation in `docs/` has been updated.
-- [ ] **Lint and Format**: Code follows standard conventions (e.g., PEP 8 / `black` / `flake8` for Python, ESLint / Prettier for TypeScript).
+- [ ] **Lint and Format**: Code follows standard conventions (e.g., PEP 8 / `black` / `flake8` for Python 3.15, ESLint / Prettier for TypeScript).
 - [ ] **Clean Git Status**: Only files intended for the commit are staged. No leftover scratch files or temporary databases.
 
 ---

@@ -3,6 +3,7 @@
 **Document Status:** Planned API Specification — Not Yet Implemented (Phase 0)  
 **Last Updated:** October 2026  
 **Audience:** Frontend Developers, Backend Developers, API Integration Testers  
+**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-002](decisions/ADR-002-financial-rules-and-risk-classification.md)
 
 > [!IMPORTANT]
 > This document specifies the planned REST API contract for MarginWatch. These endpoints represent target behaviors and response schemas for Phase 4 implementation and do not exist in the codebase at this stage.
@@ -148,10 +149,11 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
     "currency": "USD",
     "planned_hourly_cost_rate": "75.0000",
     "estimated_remaining_hours": "140.00",
-    "expected_remaining_expenses": "1000.00",
+    "expected_remaining_expenses": "0.00",
     "assigned_user_ids": ["u-101", "u-102"]
   }
   ```
+  *(Note: `estimated_remaining_hours` is nullable; omit or pass `null` if unknown).*
 - **Success Response:** `201 Created`
 - **Error Responses:**
   - `400 Bad Request`: Negative numbers, duplicate `code`, or non-existent `client_id`.
@@ -160,7 +162,7 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 ### 4.3 Update Project Baselines & Estimates
 - **Endpoint:** `PUT /api/v1/projects/{id}/`
 - **Allowed Roles:** `AGENCY_MANAGER` strictly.
-- **Purpose:** Update scope estimates (`estimated_remaining_hours`, `expected_remaining_expenses`) and budgets as delivery progresses.
+- **Purpose:** Update scope estimates (`estimated_remaining_hours`, `expected_remaining_expenses`) and budgets as delivery progresses. Passing `"estimated_remaining_hours": null` explicitly marks the estimate as unknown.
 
 ---
 
@@ -291,6 +293,9 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 - **Endpoint:** `GET /api/v1/projects/{id}/financial-summary/`
 - **Allowed Roles:** `AGENCY_MANAGER` strictly.
 - **Purpose:** Authoritative real-time calculation of project financials and deterministic risk classification.
+
+#### Case A: Complete Forecast Data Available
+When `estimated_remaining_hours` is valid (e.g., `140.00` hrs):
 - **Success Response:** `200 OK`
   ```json
   {
@@ -303,28 +308,80 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
       "planned_cost_budget": "28000.00",
       "planned_hourly_cost_rate": "75.0000",
       "estimated_remaining_hours": "140.00",
-      "expected_remaining_expenses": "1000.00"
+      "expected_remaining_expenses": "0.00"
     },
     "actuals": {
       "total_hours_logged": "180.00",
       "actual_labor_cost": "13500.00",
-      "approved_expenses": "2200.00",
+      "approved_expense_cost": "2200.00",
       "actual_total_cost": "15700.00",
-      "pending_expenses": "450.00"
+      "pending_expense_cost": "450.00",
+      "budget_consumption_percentage": "56.07"
     },
     "forecast": {
+      "forecast_available": true,
       "estimated_remaining_labor_cost": "10500.00",
-      "projected_final_cost": "27200.00",
-      "projected_profit": "17800.00",
-      "projected_profit_margin_percentage": "39.56"
+      "projected_final_cost": "26200.00",
+      "projected_profit": "18800.00",
+      "projected_profit_margin_percentage": "41.78"
     },
     "risk": {
-      "budget_consumption_percentage": "56.07",
-      "status": "HEALTHY",
+      "status": "healthy",
       "reasons": [
-        "Projected final cost ($27,200.00) is within planned budget ($28,000.00).",
-        "Budget consumption is at 56.07% (below 80% warning threshold)."
+        "Actual total cost ($15,700.00) is within planned budget ($28,000.00).",
+        "Projected final cost ($26,200.00) is within planned budget ($28,000.00).",
+        "Budget consumption is at 56.07% (below 80.0% warning threshold)."
       ]
+    },
+    "assumptions_and_metadata": {
+      "expected_remaining_expenses_assumed_zero": true,
+      "warning_threshold_percentage": "80.0"
+    }
+  }
+  ```
+
+#### Case B: Missing Remaining Hours Estimate (`null`)
+When `estimated_remaining_hours` is `null` and actual spending has not breached budget ($C_{actual} \le B$):
+- **Success Response:** `200 OK`
+  ```json
+  {
+    "project_id": "p-10",
+    "project_name": "Customer Portal Redesign",
+    "project_code": "PRJ-CP",
+    "currency": "USD",
+    "baselines": {
+      "contract_revenue": "45000.00",
+      "planned_cost_budget": "28000.00",
+      "planned_hourly_cost_rate": "75.0000",
+      "estimated_remaining_hours": null,
+      "expected_remaining_expenses": "0.00"
+    },
+    "actuals": {
+      "total_hours_logged": "180.00",
+      "actual_labor_cost": "13500.00",
+      "approved_expense_cost": "2200.00",
+      "actual_total_cost": "15700.00",
+      "pending_expense_cost": "450.00",
+      "budget_consumption_percentage": "56.07"
+    },
+    "forecast": {
+      "forecast_available": false,
+      "estimated_remaining_labor_cost": null,
+      "projected_final_cost": null,
+      "projected_profit": null,
+      "projected_profit_margin_percentage": null,
+      "reason_unavailable": "Estimated remaining hours is null (unknown). Forward-looking projections are unavailable."
+    },
+    "risk": {
+      "status": "insufficient_data",
+      "reasons": [
+        "Actual spending ($15,700.00) has not exceeded budget ($28,000.00).",
+        "Estimated remaining hours is unknown (null); reliable forecasting is impossible."
+      ]
+    },
+    "assumptions_and_metadata": {
+      "expected_remaining_expenses_assumed_zero": true,
+      "warning_threshold_percentage": "80.0"
     }
   }
   ```
@@ -347,7 +404,7 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
   ```json
   {
     "project_id": "p-10",
-    "deterministic_status": "AT_RISK",
+    "deterministic_status": "at_risk",
     "ai_advisor": {
       "executive_summary": "Project PRJ-CP is currently at risk of exceeding its planned delivery budget by $1,800.00 despite currently having consumed only 60% of funds.",
       "primary_risk_drivers": [

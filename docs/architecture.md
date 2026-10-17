@@ -3,16 +3,17 @@
 **Document Status:** Conceptual Architecture Specification (Phase 0)  
 **Last Updated:** October 2026  
 **Audience:** System Architects, Backend Engineers, Frontend Engineers  
+**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-002](decisions/ADR-002-financial-rules-and-risk-classification.md)
 
 ---
 
 ## 1. Architectural Overview & Philosophy
 
-MarginWatch is designed as a decoupled, full-stack web application adhering to a **backend-authoritative** architecture. The system is split cleanly between a modern Next.js client interface and a robust Django REST Framework (DRF) backend service.
+MarginWatch is designed as a decoupled, full-stack web application adhering to a **backend-authoritative** architecture. The system is split cleanly between a modern Next.js client interface and a robust Django REST Framework (DRF) backend service running on **Python 3.15**.
 
 ### Fundamental Architectural Tenets
-1. **Backend as the Single Source of Truth:** All financial calculations, state transitions (e.g., expense approvals), permissions, and AI interactions occur strictly on the backend. The frontend is an interface for presentation and user interaction; it never calculates authoritative financials.
-2. **Deterministic Calculations, Advisory AI:** Financial metrics (profitability, cost burn, budget overrun) are calculated using pure, deterministic algorithms. AI is utilized solely as a read-only advisor to explain risk drivers and recommend operational interventions.
+1. **Backend as the Single Source of Truth:** All financial calculations, state transitions (e.g., expense approvals), permissions, and AI interactions occur strictly on the backend. The backend owns the authoritative financial calculation engine and deterministic risk classification. The frontend is an interface for presentation and user interaction; it never calculates authoritative financials.
+2. **Deterministic Calculations, Advisory AI:** Financial metrics (profitability, cost burn, budget overrun) are calculated using pure, deterministic algorithms using exact decimal arithmetic. AI is utilized solely as a read-only advisor to explain risk drivers and recommend operational interventions.
 3. **Decoupled API Contract:** The frontend interacts with the backend strictly via standardized RESTful JSON endpoints (`/api/v1/`).
 4. **Developer Simplicity:** The architecture avoids distributed complexity (microservices, event buses) in favor of a clean, monolithic backend service with modular domain separation.
 
@@ -34,10 +35,10 @@ graph TB
         AUTH_MW[Authentication & Session / Token Verification]
     end
 
-    subgraph Service Tier [Backend - Django & Django REST Framework]
+    subgraph Service Tier [Backend - Python 3.15 + Django & DRF]
         Views[API Views & Serializers<br>Input Validation & Error Envelopes]
         Perms[Permission Engine<br>RBAC & Object-Level Checks]
-        FinEngine[Financial Calculation Service<br>Deterministic Decimal Engine]
+        FinEngine[Financial Calculation Service<br>Pure Python 3.15 Decimal Engine]
         ExpenseState[Expense Approval State Machine]
         AIService[AI Risk Advisor Service<br>Context Sanitizer & Prompt Manager]
     end
@@ -67,19 +68,19 @@ graph TB
 
 ## 3. Tier Responsibilities
 
-### 3.1 Backend Responsibilities (Django & DRF)
+### 3.1 Backend Responsibilities (Python 3.15, Django & DRF)
 - **Identity & Access Control:** Manages user authentication, role assignment (`AGENCY_MANAGER` vs. `TEAM_MEMBER`), and enforces object-level access boundaries.
 - **Input Validation:** Enforces strict boundary validation on all payload attributes (e.g., non-negative amounts, maximum working hours per day).
-- **Authoritative Financial Logic:** Houses the pure Python calculation service implementing the formulas in [`docs/financial-rules.md`](financial-rules.md) using `Decimal`.
+- **Authoritative Financial Logic & Risk Watchdog:** Houses the pure Python calculation service implementing the formulas and precedence rules in [`docs/financial-rules.md`](financial-rules.md) using `decimal.Decimal`. The backend is solely responsible for determining project health (`over_budget`, `insufficient_data`, `at_risk`, `healthy`).
 - **Expense State Machine:** Governs transitions from `PENDING` to `APPROVED` or `REJECTED`, logging author, reviewer, timestamps, and audit metadata.
 - **AI Gateway & Context Assembly:** Packages verified financial metrics, strips sensitive PII, formats prompt payloads, calls the Google Gemini API, and validates the returned structured output.
 - **Standardized Response Formatting:** Guarantees uniform JSON envelopes for both successful payloads and validation/system errors.
 
-### 3.2 Frontend Responsibilities (Next.js)
+### 3.2 Frontend Responsibilities (Next.js & TypeScript)
 - **Presentation & Interaction:** Delivers an intuitive, accessible interface built with TypeScript and Tailwind CSS.
 - **Usability Validation:** Provides immediate client-side form feedback (e.g., preventing empty fields or alphanumeric hours) before submitting requests to reduce round-trips.
 - **Lifecycle & State Handling:** Explicitly manages and renders **loading**, **success**, **empty**, and **error** states for every asynchronous view.
-- **Data Rendering:** Renders authoritative financial totals, health badges (`HEALTHY`, `AT_RISK`, `OVER_BUDGET`, `INSUFFICIENT_DATA`), and chart visualizations.
+- **Data Rendering:** Renders authoritative financial totals, health badges (`healthy`, `at_risk`, `over_budget`, `insufficient_data`), and chart visualizations.
 - **AI Output Presentation:** Displays AI risk summaries and recommendations cleanly, distinctly visually labeled as "AI Advisory" to prevent confusion with deterministic metrics.
 
 ---
@@ -122,7 +123,7 @@ sequenceDiagram
     actor Manager as Agency Manager
     participant FE as Next.js Client
     participant API as DRF Financial View
-    participant FinSvc as Financial Calculation Service
+    participant FinSvc as Financial Calculation Service (Python 3.15)
     participant AISvc as AI Advisor Service
     participant Gemini as Google Gemini API
     participant DB as Relational Database
@@ -132,7 +133,7 @@ sequenceDiagram
     API->>DB: Fetch Project baselines, TimeEntries, Approved Expenses
     DB-->>API: Raw financial dataset
     API->>FinSvc: calculate_project_financials(dataset)
-    FinSvc-->>API: Deterministic metrics & status (e.g., AT_RISK)
+    FinSvc-->>API: Deterministic metrics & status (e.g., at_risk)
     API-->>FE: 200 OK (Authoritative metrics payload)
     FE-->>Manager: Displays metrics, health badge, burn rate
 
@@ -208,7 +209,7 @@ All API responses follow a predictable JSON error schema. Internal system errors
            │
            │ HTTPS / REST (/api/v1/...)
            ▼
-[ Backend Server (Django / DRF) ]
+[ Backend Server (Python 3.15 + Django / DRF) ]
   • Private ENV: DJANGO_SECRET_KEY, DB_PASSWORD, GEMINI_API_KEY
   • Enforces Authentication, RBAC, and Object-Level Access
            │
@@ -227,6 +228,7 @@ All API responses follow a predictable JSON error schema. Internal system errors
 ## 7. Development Environment & Migration Path
 
 ### Local Development (Phases 1–7)
+- **Runtime:** Python 3.15 via Conda environment (`projectfinance`) or virtual environment (`venv`).
 - **Frontend:** Next.js development server running on port `3000`.
 - **Backend:** Django development server (`manage.py runserver`) running on port `8000`.
 - **Database:** Local file-based SQLite (`db.sqlite3`). This enables instant setup without requiring Docker or a dedicated database daemon during early prototyping.
@@ -234,4 +236,4 @@ All API responses follow a predictable JSON error schema. Internal system errors
 ### Production Path (Phase 8+)
 - **Database Transition:** The Django ORM models are written to be database-agnostic. Transitioning to PostgreSQL requires updating `DATABASES` settings in `settings.py` and running `manage.py migrate` without altering application business logic.
 - **Static & Media Files:** Configured for WhiteNoise or cloud storage buckets (e.g., AWS S3).
-- **Containerization:** Clean Dockerfiles for both frontend (Node standalone) and backend (Gunicorn/Uvicorn).
+- **Containerization:** Clean Dockerfiles for both frontend (Node standalone) and backend (Gunicorn/Uvicorn with Python 3.15).

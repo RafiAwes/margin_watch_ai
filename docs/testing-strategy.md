@@ -1,33 +1,34 @@
 # MarginWatch — Comprehensive Testing Strategy & Test Scenarios
 
-**Document Status:** Test Strategy Blueprint — Not Yet Executed (Phase 0)  
+**Document Status:** Test Strategy Blueprint — Planned Tests (Phase 0)  
 **Last Updated:** October 2026  
 **Audience:** QA Engineers, Backend Engineers, Frontend Developers  
+**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-002](decisions/ADR-002-financial-rules-and-risk-classification.md)
 
 > [!NOTE]
-> This document defines the testing strategy, test pyramid, and high-priority scenario matrix for MarginWatch. No tests have been executed at this stage, as application code has not yet been implemented.
+> This document defines the testing strategy, test pyramid, and high-priority scenario matrix for MarginWatch. All test cases documented herein are planned specifications to be implemented during Phases 3 through 8. No tests have been executed at this stage, as application code has not yet been implemented.
 
 ---
 
 ## 1. Testing Philosophy & Test Pyramid
 
-Financial and watchdog systems require rigorous verification. MarginWatch emphasizes a **bottom-heavy test pyramid**, focusing the largest volume of tests on pure mathematical calculation logic and server-side authorization boundaries.
+Financial watchdog systems require zero tolerance for calculation errors and security breaches. MarginWatch implements a **bottom-heavy test pyramid**, focusing heavily on pure mathematical unit tests using Python 3.15 and server-side authorization boundaries.
 
 ```
        /\
-      /  \      Frontend Workflow Tests (E2E / Integration)
+      /  \      Frontend Workflow Tests (Playwright / Integration)
      /----\     - Key user journeys, login, forms, state transitions
     /      \
    /--------\   API & Integration Tests (DRF APITestCase)
   /          \  - Auth, RBAC, OLAC, expense state machine, AI fallback
  /------------\
-/ Pure Unit    \ Unit Tests (Pure Python / Decimal Services)
+/ Pure Unit    \ Unit Tests (Pure Python 3.15 / Decimal Services)
 / Tests         \ - Financial formulas, boundary values, zero divisions, rounding
 -----------------
 ```
 
 ### Core Testing Pillars
-1. **Financial Rule Isolation:** The financial calculation engine is built as pure, side-effect-free Python functions. It is thoroughly verified with unit tests independent of database setup or HTTP mocking.
+1. **Financial Rule Isolation:** The financial calculation engine is built as pure, side-effect-free Python functions (`backend/finance/services.py`). It is verified with isolated unit tests independent of database setup or HTTP mocking.
 2. **Deterministic Verification:** Every financial test asserts exact penny matches using `Decimal('XX.XX')`. Floating-point assertions (`assertAlmostEqual`) are prohibited.
 3. **Security Boundary Coverage:** Every endpoint is tested against both positive and negative authorization cases (unauthenticated, wrong role, cross-tenant/cross-user IDOR attempts).
 4. **Resilient AI Simulation:** External AI provider dependencies (Google Gemini) are always mocked in automated test suites to simulate timeouts, rate limits, and malformed outputs without incurring API costs or network flakiness.
@@ -39,7 +40,11 @@ Financial and watchdog systems require rigorous verification. MarginWatch emphas
 ### 2.1 Unit Tests (Financial Engine)
 - Validate all mathematical equations from [`docs/financial-rules.md`](financial-rules.md).
 - Test rounding behaviors (`ROUND_HALF_UP`) and precision preservation.
-- Verify precedence hierarchy across `HEALTHY`, `AT_RISK`, `OVER_BUDGET`, and `INSUFFICIENT_DATA`.
+- Verify precedence hierarchy:
+  1. `over_budget` ($C_{actual} > B$)
+  2. `insufficient_data` ($B \le 0$ or $H_{rem}$ is `null`)
+  3. `at_risk` ($C_{projected} > B$ or $P_{consumed} \ge 80.0\%$ with $H_{rem} > 0$)
+  4. `healthy` ($C_{actual} \le B$ and $C_{projected} \le B$)
 - Test boundary conditions: zero revenue, zero budget, zero hours, missing remaining estimates.
 
 ### 2.2 API Validation & Constraint Tests
@@ -55,8 +60,8 @@ Financial and watchdog systems require rigorous verification. MarginWatch emphas
 - Verify new expenses start in `PENDING`.
 - Verify only managers can trigger `/approve/` and `/reject/`.
 - Verify rejecting an expense requires a non-empty `rejection_reason`.
-- Verify that `PENDING` and `REJECTED` expenses are mathematically excluded from `actual_total_cost`.
-- Verify approved expenses cannot have their amount or category mutated.
+- Verify that `PENDING` and `REJECTED` expenses are mathematically excluded from `actual_expense_cost` and `actual_total_cost`.
+- Verify approved expenses cannot have their amount, category, or project mutated.
 
 ### 2.5 AI Risk Advisor Integration & Fallback Tests
 - Test normal flow with mocked successful Gemini JSON response.
@@ -71,30 +76,57 @@ Financial and watchdog systems require rigorous verification. MarginWatch emphas
 
 ---
 
-## 3. High-Priority Test Scenario Matrix
+## 3. Authoritative Numerical Benchmark Test Matrix
+
+The following test cases directly verify the 5 authoritative numerical benchmark scenarios defined in [`docs/financial-rules.md`](financial-rules.md).
+
+| Test ID | Scenario Name | Inputs | Expected Financial Calculations | Expected Risk Status | Priority |
+| :--- | :--- | :--- | :--- | :--- | :---: |
+| **TC-NUM-01** | Scenario 1: Healthy | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$2,000.00$<br>$H_{rem} = 40.0\text{ hrs}$<br>$C_{hourly} = \$50.00$<br>$E_{rem} = \$0.00$ | $P_{consumed} = 33.33\%$<br>$C_{rem\_labor} = \$2,000.00$<br>$C_{projected} = \$4,000.00$<br>$P_{profit} = \$6,000.00$<br>$M_{profit} = 60.00\%$ | `healthy` | **P0** |
+| **TC-NUM-02** | Scenario 2: Forecast Over Budget | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$4,000.00$<br>$H_{rem} = 50.0\text{ hrs}$<br>$C_{hourly} = \$50.00$<br>$E_{rem} = \$0.00$ | $P_{consumed} = 66.67\%$<br>$C_{rem\_labor} = \$2,500.00$<br>$C_{projected} = \$6,500.00$<br>$P_{profit} = \$3,500.00$<br>$M_{profit} = 35.00\%$ | `at_risk`<br>(Reason: $C_{projected} > B$ by $500.00) | **P0** |
+| **TC-NUM-03** | Scenario 3: Already Over Budget | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$6,200.00$<br>$H_{rem} = \text{null}$<br>$C_{hourly} = \$50.00$ | $P_{consumed} = 103.33\%$<br>$C_{rem\_labor} = \text{null}$<br>$C_{projected} = \text{null}$<br>$P_{profit} = \text{null}$<br>$M_{profit} = \text{null}$ | `over_budget`<br>(Rule 1 priority: takes precedence over missing $H_{rem}$) | **P0** |
+| **TC-NUM-04** | Scenario 4: Missing Estimate | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$2,000.00$<br>$H_{rem} = \text{null}$<br>$C_{hourly} = \$50.00$ | $P_{consumed} = 33.33\%$ (Valid)<br>$C_{rem\_labor} = \text{null}$<br>$C_{projected} = \text{null}$<br>$P_{profit} = \text{null}$<br>$M_{profit} = \text{null}$ | `insufficient_data`<br>(Rule 2: within budget but forecast unknown) | **P0** |
+| **TC-NUM-05** | Scenario 5: High Consumption Warning | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$4,900.00$<br>$H_{rem} = 10.0\text{ hrs}$<br>$C_{hourly} = \$50.00$<br>$E_{rem} = \$0.00$ | $P_{consumed} = 81.67\%$<br>$C_{rem\_labor} = \$500.00$<br>$C_{projected} = \$5,400.00$<br>$P_{profit} = \$4,600.00$<br>$M_{profit} = 46.00\%$ | `at_risk` (Warning heuristic on)<br>`healthy` (Warning heuristic off) | **P0** |
+
+---
+
+## 4. Edge-Case & Boundary Value Test Matrix
+
+| Test ID | Category | Scenario / Input Condition | Expected Calculation / Behavior | Expected Risk Status | Priority |
+| :--- | :--- | :--- | :--- | :--- | :---: |
+| **TC-EDGE-01** | Boundary | Zero planned budget ($B = 0.00$) | $P_{consumed} = \text{null}$ (division by zero avoided). Warning returned. | `insufficient_data` | **P0** |
+| **TC-EDGE-02** | Boundary | Zero contract revenue ($R = 0.00$, $B = \$5,000.00$) | $P_{profit} = -\$C_{projected}$. $M_{profit} = \text{null}$ (division by zero avoided). | `healthy` / `at_risk` relative to $B$ | **P0** |
+| **TC-EDGE-03** | Boundary | Exactly 100% budget consumption ($C_{actual} = B = \$6,000.00$, $H_{rem} = 5.0$) | $P_{consumed} = 100.00\%$. $C_{projected} = \$6,250.00 > \$6,000.00$. | `at_risk` (forecast overrun) | **P0** |
+| **TC-EDGE-04** | Boundary | Exactly 100% budget consumption, 0 remaining hours ($C_{actual} = B = \$6,000.00$, $H_{rem} = 0.0$) | $P_{consumed} = 100.00\%$. $C_{projected} = \$6,000.00 \le \$6,000.00$. | `at_risk` (if 80% warning heuristic triggers on $\ge 80\%$); or `healthy` if heuristic requires $H_{rem} > 0$. | **P1** |
+| **TC-EDGE-05** | Validation | Negative hours worked ($H_{entry} = -3.5$) | API serializer rejects with HTTP 400 Bad Request. | N/A (Validation Error) | **P0** |
+| **TC-EDGE-06** | Validation | Excessive hours worked ($H_{entry} = 25.0$) | API serializer rejects with HTTP 400 ("Max 24 hrs/day"). | N/A (Validation Error) | **P1** |
+| **TC-EDGE-07** | Validation | Negative remaining hours ($H_{rem} = -10.0$) | API serializer rejects with HTTP 400 ("Remaining hours cannot be negative"). | N/A (Validation Error) | **P0** |
+| **TC-EDGE-08** | Snapshot | Member's cost rate changes after time entry logged | $C_{labor}$ continues using `cost_rate_snapshot` from time entry creation time; historical audit preserved. | Preserved | **P0** |
+| **TC-EDGE-09** | Segregation | Expenses in mixed states: $1,000 approved, $500 pending, $200 rejected | $C_{expense} = \$1,000.00$. Pending ($500) and rejected ($200) strictly excluded from $C_{actual}$. | Evaluated on $C_{actual} = C_{labor} + \$1,000$ | **P0** |
+| **TC-EDGE-10** | Forecast | Explicit zero remaining hours ($H_{rem} = 0.0$) | $C_{rem\_labor} = \$0.00$. $C_{projected} = C_{actual} + E_{rem}$. Project complete. | `healthy` (if $C_{actual} \le B$) | **P0** |
+| **TC-EDGE-11** | Forecast | Missing expected remaining expenses ($E_{rem} = \text{null}$) | Defaults to `$0.00` in MVP with explicit assumption metadata. | Evaluated normally | **P1** |
+
+---
+
+## 5. Security & Access Control Test Matrix
 
 | Test ID | Category | Scenario / Input Condition | Expected Result | Priority |
 | :--- | :--- | :--- | :--- | :---: |
-| **TC-FIN-01** | Financial Unit | Zero planned budget ($B = 0.00$) | Budget consumption returns `null`; status evaluates to `INSUFFICIENT_DATA`. No division by zero. | **P0** |
-| **TC-FIN-02** | Financial Unit | Zero contract revenue ($R = 0.00$) | Profit margin % returns `null`; net profit calculated accurately ($0 - C_{projected}$). No exception. | **P0** |
-| **TC-FIN-03** | Financial Unit | Missing estimated remaining hours ($H_{rem} = \text{null}$) | Forecast metrics return `null`; status evaluates to `INSUFFICIENT_DATA`. | **P0** |
-| **TC-FIN-04** | Financial Unit | Actual total cost exceeds planned budget ($C_{actual} > B$) | Status evaluates strictly to `OVER_BUDGET` regardless of remaining estimates. | **P0** |
-| **TC-FIN-05** | Financial Unit | $C_{actual} \le B$, but $C_{projected} > B$ | Status evaluates to `AT_RISK` (early warning of forecast overrun). | **P0** |
-| **TC-FIN-06** | Financial Unit | $C_{actual} \le B$, $C_{projected} \le B$, but $P_{consumed} \ge 80.0\%$ | Status evaluates to `AT_RISK` (consumption threshold heuristic). | **P0** |
-| **TC-FIN-07** | Financial Unit | Multiple entries with differing historic cost snapshots | $C_{labor}$ equals exact sum of products; reflects historical rates, not current user rate. | **P0** |
-| **TC-EXP-01** | Expense Logic | Submit expense, calculate financials while `PENDING` | Amount is completely excluded from $C_{actual}$ and $P_{consumed}$. | **P0** |
-| **TC-EXP-02** | Expense Logic | Approve expense as `AGENCY_MANAGER` | Status transitions to `APPROVED`; amount immediately reflected in $C_{actual}$. | **P0** |
-| **TC-EXP-03** | Expense Logic | Reject expense without providing `rejection_reason` | Request rejected with HTTP 400 validation error; status remains `PENDING`. | **P1** |
-| **TC-EXP-04** | Expense Logic | Attempt to approve expense as `TEAM_MEMBER` | Request rejected with HTTP 403 Forbidden; status remains unchanged. | **P0** |
 | **TC-SEC-01** | Authorization | Team member attempts to log time to unassigned project | Request rejected with HTTP 403 Forbidden. | **P0** |
 | **TC-SEC-02** | Authorization | Team member attempts to update another member's time entry | Request rejected with HTTP 403 Forbidden or 404 Not Found (IDOR defense). | **P0** |
 | **TC-SEC-03** | Data Masking | Team member queries project list `GET /api/v1/projects/` | Response excludes `contract_revenue`, `planned_cost_budget`, and profit margins. | **P0** |
 | **TC-SEC-04** | Data Masking | Team member queries time entries `GET /api/v1/time-entries/` | Response excludes `cost_rate_snapshot`. | **P0** |
-| **TC-VAL-01** | Input Validation| Submit time entry with `hours_worked = -2.5` or `0.0` | HTTP 400 Bad Request with field validation error. | **P0** |
-| **TC-VAL-02** | Input Validation| Submit time entry with `hours_worked = 25.0` | HTTP 400 Bad Request ("Maximum 24 hours per entry"). | **P1** |
-| **TC-VAL-03** | Input Validation| Submit expense with negative or zero amount | HTTP 400 Bad Request ("Amount must be greater than 0.00"). | **P0** |
+| **TC-SEC-05** | Authorization | Team member attempts to approve an expense | Request rejected with HTTP 403 Forbidden. | **P0** |
+| **TC-SEC-06** | Authorization | Team member attempts to trigger AI risk analysis | Request rejected with HTTP 403 Forbidden. | **P0** |
+
+---
+
+## 6. AI Risk Advisor Resilience Test Matrix
+
+| Test ID | Category | Scenario / Input Condition | Expected Result | Priority |
+| :--- | :--- | :--- | :--- | :---: |
 | **TC-AI-01** | AI Advisor | Mock Gemini API responds with valid structured JSON | HTTP 200 OK with parsed executive summary, drivers, and recommendations. | **P0** |
 | **TC-AI-02** | AI Advisor | Mock Gemini API times out after 10 seconds | HTTP 503 Service Unavailable with friendly fallback; financial summary remains intact. | **P0** |
 | **TC-AI-03** | AI Advisor | Mock Gemini API returns HTTP 429 Quota Exceeded | HTTP 503 Service Unavailable with quota notification. | **P1** |
 | **TC-AI-04** | AI Advisor | Mock Gemini API returns unparseable or schema-violating text | HTTP 502 Bad Gateway; server handles gracefully without crashing. | **P1** |
-| **TC-AI-05** | AI Guardrail | Verify AI response cannot execute database writes | Mocked AI suggests changing budget; verify database remains unaltered. | **P0** |
+| **TC-AI-05** | AI Guardrail | Verify AI response cannot execute database writes | Mocked AI suggests changing budget; verify database records remain unaltered. | **P0** |

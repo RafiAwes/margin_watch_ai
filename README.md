@@ -1,6 +1,6 @@
 # MarginWatch — Project Profitability & Budget Watchdog
 
-A modern, full-stack financial monitoring and delivery-cost watchdog built for small to mid-sized software agencies.
+A modern, full-stack financial monitoring and delivery-cost watchdog built for small- to mid-sized software agencies.
 
 ---
 
@@ -11,16 +11,30 @@ Small software agencies routinely face a critical operational hazard: **projects
 This failure mode typically occurs due to:
 * **Unrecorded or Delayed Time Tracking:** Labor costs accumulate invisibly between billing cycles.
 * **Untracked Expenses:** Direct project expenditures (subcontractors, cloud licenses, hardware) are tallied after the fact rather than monitored in real time.
-* **Flawed Forecasting:** Management frequently equates **budget consumed** with **project completion percentage**, failing to anticipate the cost required to complete the remaining scope.
+* **Flawed Forecasting:** Management frequently equates **budget consumed** with **project completion percentage**, failing to anticipate the cost required to complete the remaining scope, or silently converting missing estimates to zero.
 
 ### The Question MarginWatch Answers
 > *"Based on recorded work hours, approved expenses, and estimated remaining work, is this project likely to exceed its planned delivery-cost budget?"*
 
 ---
 
-## 2. Proposed Solution
+## 2. Proposed Solution & Financial Monitoring Approach
 
 MarginWatch establishes an automated early-warning watchdog for agency delivery operations. By combining **historical rate-snapshotted time tracking**, **two-stage expense approval**, **pure deterministic financial calculations**, and a **server-side AI Risk Advisor**, the platform gives agency leadership real-time visibility into project burn rates, projected final costs, and actionable overrun mitigations.
+
+### Core Financial Principles
+- **Authoritative Backend Engine:** All financial calculations and risk classifications are owned exclusively by the backend, codified in Python 3.15 using exact fixed-point decimal arithmetic.
+- **Strict Separation of Actuals vs. Forecasts:** Incurred costs ($C_{actual}$) represent established facts, while projected completion costs ($C_{projected}$) represent forward-looking estimates.
+- **Unambiguous Missing Estimates Policy:** `null` remaining hours denotes an unknown estimate and suppresses forecasts, preventing false zero-estimate optimism.
+- **Strict Precedence Hierarchy:**
+  1. `over_budget` ($C_{actual} > B$) — takes absolute priority over missing forecast data.
+  2. `insufficient_data` — within budget, but required forecast inputs are missing.
+  3. `at_risk` — projected overrun ($C_{projected} > B$) or configurable consumption warning heuristic ($P_{consumed} \ge 80.0\%$).
+  4. `healthy` — spending and projections are within budget.
+
+For complete mathematical definitions, rules, and worked examples, see:
+* [`docs/financial-rules.md`](docs/financial-rules.md)
+* [`docs/decisions/ADR-002-financial-rules-and-risk-classification.md`](docs/decisions/ADR-002-financial-rules-and-risk-classification.md)
 
 ---
 
@@ -39,7 +53,7 @@ MarginWatch establishes an automated early-warning watchdog for agency delivery 
 * **Rate-Snapshotted Time Entries:** Team members log hours against assigned projects. The system captures the user's active hourly cost rate at the exact moment of entry (`cost_rate_snapshot`), ensuring historical project financials are immutable against future wage changes.
 * **Expense Approval State Machine:** Logged direct expenses initiate in `PENDING` status and are excluded from project costs until an Agency Manager explicitly reviews and marks them `APPROVED` or `REJECTED` (with mandatory reason).
 * **Deterministic Financial Engine:** Pure, backend-authoritative calculation service using exact fixed-point decimal arithmetic to compute labor costs, budget consumption, projected final costs, and profit margins.
-* **Four-Tier Risk Classification:** Projects are deterministically categorized via a strict precedence hierarchy into `HEALTHY`, `AT_RISK`, `OVER_BUDGET`, or `INSUFFICIENT_DATA`.
+* **Four-Tier Risk Classification:** Projects are deterministically categorized via a strict precedence hierarchy into `healthy`, `at_risk`, `over_budget`, or `insufficient_data`.
 * **AI Risk Advisor:** A server-side advisory service powered by Google Gemini that generates plain-language executive summaries, pinpoints primary risk drivers, and recommends 2 to 4 practical operational interventions based strictly on calculated metrics.
 
 ---
@@ -47,10 +61,10 @@ MarginWatch establishes an automated early-warning watchdog for agency delivery 
 ## 5. Technology Stack
 
 * **Frontend:** [Next.js](https://nextjs.org/) (App Router), [TypeScript](https://www.typescriptlang.org/), and [Tailwind CSS](https://tailwindcss.com/).
-* **Backend:** [Python 3.11+](https://www.python.org/), [Django](https://www.djangoproject.com/), and [Django REST Framework (DRF)](https://www.django-rest-framework.org/).
+* **Backend:** [Python 3.15](https://www.python.org/), [Django](https://www.djangoproject.com/), and [Django REST Framework (DRF)](https://www.django-rest-framework.org/).
 * **Database:** SQLite for rapid, zero-dependency local development (Phases 1–7), with a direct migration path to PostgreSQL for production environments (Phase 8+).
 * **AI Provider:** [Google Gemini API](https://ai.google.dev/) (`gemini-2.5-flash`), accessed strictly server-to-server from the Django backend.
-* **Testing:** Django TestCase / DRF APITestCase for backend unit and integration testing; planned Playwright/React Testing Library for frontend workflows.
+* **Testing:** Django TestCase / DRF APITestCase on Python 3.15 for backend unit and integration testing; planned Playwright/React Testing Library for frontend workflows.
 * **Version Control:** Git & GitHub following Conventional Commits.
 
 ---
@@ -66,7 +80,7 @@ MarginWatch enforces a decoupled, **backend-authoritative** architecture:
         ▼
 [ REST API Gateway: /api/v1/ ]
         │
-        │ Django REST Framework
+        │ Django REST Framework (Python 3.15)
         ├──────────────────────────────────────────┐
         ▼                                          ▼
 [ Deterministic Financial Engine ]         [ Server-Side AI Advisor ]
@@ -90,13 +104,13 @@ For architectural decisions, trade-offs, and request flows, see:
 | :--- | :--- | :--- |
 | **Actual Labor Cost** | $\sum (\text{Recorded Hours} \times \text{Historical Rate Snapshot})$ | Cumulative internal labor expenditures to date. |
 | **Approved Expenses** | $\sum \text{Expenses where status = APPROVED}$ | Verified direct non-labor expenditures. |
-| **Actual Total Cost** | $\text{Actual Labor Cost} + \text{Approved Expenses}$ | Total funds burned to date. |
+| **Actual Total Cost** | $\text{Actual Labor Cost} + \text{Approved Expenses}$ | Total funds burned to date ($C_{actual} = C_{labor} + C_{expense}$). |
 | **Budget Consumption %** | $(\text{Actual Total Cost} / \text{Planned Cost Budget}) \times 100$ | Percentage of internal expenditure ceiling consumed. |
-| **Estimated Remaining Labor Cost** | $\text{Estimated Remaining Hours} \times \text{Planned Hourly Cost}$ | Forecasted labor investment required to deliver scope. |
-| **Projected Final Cost** | $\text{Actual Total Cost} + \text{Remaining Labor Cost} + \text{Remaining Expenses}$ | Total expected cost at project completion. |
-| **Projected Profit** | $\text{Contract Revenue} - \text{Projected Final Cost}$ | Forecasted agency net earnings. |
-| **Projected Profit Margin %** | $(\text{Projected Profit} / \text{Contract Revenue}) \times 100$ | Expected margin health across project lifecycle. |
-| **Deterministic Risk Status** | Precedence: `INSUFFICIENT_DATA` $\rightarrow$ `OVER_BUDGET` $\rightarrow$ `AT_RISK` $\rightarrow$ `HEALTHY` | Discrete operational status badge. |
+| **Estimated Remaining Labor Cost** | $\text{Estimated Remaining Hours} \times \text{Planned Hourly Cost}$ | Forecasted labor investment required to deliver scope (or `null` if unknown). |
+| **Projected Final Cost** | $\text{Actual Total Cost} + \text{Remaining Labor Cost} + \text{Remaining Expenses}$ | Total expected cost at project completion (or `null` if unknown). |
+| **Projected Profit** | $\text{Contract Revenue} - \text{Projected Final Cost}$ | Forecasted agency net earnings (or `null` if unknown). |
+| **Projected Profit Margin %** | $(\text{Projected Profit} / \text{Contract Revenue}) \times 100$ | Expected margin health across project lifecycle (or `null` if unknown). |
+| **Deterministic Risk Status** | Precedence: `over_budget` $\rightarrow$ `insufficient_data` $\rightarrow$ `at_risk` $\rightarrow$ `healthy` | Discrete operational status badge. |
 
 For detailed mathematical rules and worked examples, see [`docs/financial-rules.md`](docs/financial-rules.md).
 
@@ -144,7 +158,8 @@ marginwatch/
 │   ├── ai-risk-advisor.md         # AI specifications, prompt design, and 15 benchmark scenarios
 │   ├── development-roadmap.md     # 10-phase milestone roadmap from Phase 0 to Phase 9
 │   └── decisions/
-│       └── ADR-001-initial-architecture.md # Stack decisions, trade-offs, and rationale
+│       ├── ADR-001-initial-architecture.md # Stack decisions, trade-offs, and rationale
+│       └── ADR-002-financial-rules-and-risk-classification.md # Financial rules, missing estimates, and precedence
 ├── backend/                       # Django backend directory (initialized in Phase 1)
 │   └── .gitkeep
 └── frontend/                      # Next.js frontend directory (initialized in Phase 1)
@@ -156,7 +171,7 @@ marginwatch/
 ## 11. Development Status & Roadmap
 
 > [!NOTE]
-> **Current Status: Phase 0 (Planning, Blueprint & Repository Initialization Complete)**  
+> **Current Status: Phase 0 (Planning, Blueprint & Financial Rules Formalization Complete)**  
 > Framework initialization and application logic are scheduled for subsequent milestones.
 
 | Phase | Milestone Name | Status |
@@ -181,7 +196,7 @@ For detailed phase tasks and definitions of done, see [`docs/development-roadmap
 *(The following instructions represent the planned setup workflow once the frameworks are initialized in Phase 1.)*
 
 ### Prerequisites
-* Python 3.11+
+* Python 3.15 (via Conda `projectfinance` or virtual environment)
 * Node.js 18+ and npm
 * Git
 
@@ -195,10 +210,16 @@ cd marginwatch
 cp .env.example .env
 # Edit .env to add your local Django secret key and Gemini API key
 
-# 3. Backend Setup (forthcoming in Phase 1)
+# 3. Backend Setup (using Python 3.15)
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+
+# Option A: Using Conda environment (recommended)
+conda activate projectfinance
+
+# Option B: Using standard venv with Python 3.15
+# python -m venv venv
+# source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
