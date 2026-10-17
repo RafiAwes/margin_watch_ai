@@ -1,0 +1,6 @@
+{
+  "name": "MarginWatch — Frontend Architecture & UX Blueprint",
+  "description": "Complete frontend architecture, UI/UX design system, API contract specification, and 13-milestone implementation blueprint for MarginWatch (Project Profitability & Budget Watchdog).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
