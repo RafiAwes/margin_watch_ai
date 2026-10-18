@@ -47,4 +47,68 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.WARNING(f"Dev team member already exists: {dev_email}"))
 
+        # 3. Seed Frontend Demo Users (for direct frontend integration)
+        frontend_demo_users = [
+            {
+                "email": "alex.morgan@vanguard-agency.io",
+                "password": "Manager123!",
+                "first_name": "Alex",
+                "last_name": "Morgan",
+                "role": UserRole.MANAGER,
+                "rate": Decimal("135.0000"),
+                "is_staff": True,
+                "is_superuser": True,
+            },
+            {
+                "email": "elena.rostova@vanguard-agency.io",
+                "password": "Member123!",
+                "first_name": "Elena",
+                "last_name": "Rostova",
+                "role": UserRole.TEAM_MEMBER,
+                "rate": Decimal("115.0000"),
+                "is_staff": False,
+                "is_superuser": False,
+            },
+            {
+                "email": "marcus.chen@vanguard-agency.io",
+                "password": "Member123!",
+                "first_name": "Marcus",
+                "last_name": "Chen",
+                "role": UserRole.TEAM_MEMBER,
+                "rate": Decimal("125.0000"),
+                "is_staff": False,
+                "is_superuser": False,
+            },
+            {
+                "email": "priya.nair@vanguard-agency.io",
+                "password": "Member123!",
+                "first_name": "Priya",
+                "last_name": "Nair",
+                "role": UserRole.TEAM_MEMBER,
+                "rate": Decimal("110.0000"),
+                "is_staff": False,
+                "is_superuser": False,
+            },
+        ]
+
+        for u_data in frontend_demo_users:
+            email = u_data["email"]
+            u, created = User.objects.get_or_create(
+                email=email,
+                defaults={
+                    "first_name": u_data["first_name"],
+                    "last_name": u_data["last_name"],
+                    "role": u_data["role"],
+                    "default_hourly_cost_rate": u_data["rate"],
+                    "is_staff": u_data["is_staff"],
+                    "is_superuser": u_data["is_superuser"],
+                },
+            )
+            if created:
+                u.set_password(u_data["password"])
+                u.save()
+                self.stdout.write(self.style.SUCCESS(f"Created demo user: {email}"))
+            else:
+                self.stdout.write(self.style.WARNING(f"Demo user already exists: {email}"))
+
         self.stdout.write(self.style.SUCCESS("Dev user seeding complete."))
