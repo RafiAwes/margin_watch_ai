@@ -4,9 +4,13 @@ from django.urls import path, include
 
 from rest_framework.routers import DefaultRouter
 from users.views import UserViewSet
+from clients.views import ClientViewSet
+from projects.views import ProjectViewSet
 
 router = DefaultRouter()
 router.register(r"users", UserViewSet, basename="user")
+router.register(r"clients", ClientViewSet, basename="client")
+router.register(r"projects", ProjectViewSet, basename="project")
 
 urlpatterns = [
     path("admin/", admin.site.urls),

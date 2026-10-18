@@ -48,13 +48,13 @@
 
 | Field | Value | Notes / Evidence |
 | :--- | :--- | :--- |
-| **Current Phase** | **Phase 4: Backend Foundation, Models and Authentication** | Core `users` app extended with permissions (`IsManager`, `IsOwnerOrManager`), token blacklist logout (`/api/v1/auth/logout/`), and User Management API (`/api/v1/users/`). |
-| **Current Task** | Run user test suite and apply database migrations for `rest_framework_simplejwt.token_blacklist`. | Awaiting user test run in terminal. |
-| **Last Completed Task** | Implemented User Management ViewSet, custom RBAC permissions, and Logout endpoint in `users` app. | Files: `permissions.py`, `views.py`, `serializers.py`, `urls.py`, `settings.py`, `tests.py`. |
-| **Current Blockers** | None. | Environment ready for test execution. |
-| **Decisions Awaiting Approval** | Frontend architecture alignment (Vite + React 19 vs Next.js App Router). | `DEC-001` and `DEC-004` resolved. |
-| **Next Recommended Action** | Run `python manage.py migrate` and `python manage.py test users --keepdb` to verify the 17 auth and user management tests. | User runs in active terminal. |
-| **Last Synchronization Date** | October 18, 2026 | Session state updated. |
+| **Current Phase** | **Phase 4: Backend Foundation, Models and Authentication** *(Concurrent slice with Phase 5 CRUD APIs)* | `users`, `clients`, and `projects` models, migrations, serializers, and viewsets fully implemented. 39 unit and API tests passing across the test suite. |
+| **Current Task** | Phase 4 Task 4.8: Create `time_tracking` Django app and implement `TimeEntry` model with rate snapshot logic on save. | Ready to implement labor tracking and historical rate immutability. |
+| **Last Completed Task** | Implemented `clients` and `projects` Django apps, domain models (`Client`, `Project`, `ProjectAssignment`), migrations, DRF serializers with dynamic data masking for `TEAM_MEMBER`, viewsets with role-based queryset filtering, and comprehensive test suites (39/39 passing tests). | Files: `backend/clients/`, `backend/projects/`, `backend/config/urls.py`, `backend/config/settings.py`. |
+| **Current Blockers** | None. | Backend server running on port 8000; all 39 tests passing cleanly with `--keepdb`. |
+| **Decisions Awaiting Approval** | None. `DEC-001`, `DEC-002`, `DEC-004` resolved. `DEC-003` active via `NeonTestRunner`. | All major architectural conventions aligned. |
+| **Next Recommended Action** | Begin Phase 4 Task 4.8: create `backend/time_tracking/` app and `TimeEntry` model (`project`, `user`, `work_date`, `hours`, `hourly_cost_snapshot`, `description`) with rate snapshot preservation. | Proceed with operational time tracking. |
+| **Last Synchronization Date** | October 19, 2026 | Session state synchronized following Clients & Projects completion. Mandatory update rule active. |
 
 ---
 
@@ -78,12 +78,12 @@ Gate States:
 | :---: | :--- | :---: | :---: | :---: | :--- |
 | **0** | Repository Audit and Project Alignment | `VERIFIED` | 8 / 8 | `READY_FOR_REVIEW` | None |
 | **1** | Requirements, Scope and Financial Rules | `VERIFIED` | 12 / 12 | `READY_FOR_REVIEW` | None |
-| **2** | Architecture, Data Models and API Contracts | `VERIFIED` | 14 / 14 | `READY_FOR_REVIEW` | Open decision on `users` vs `accounts` app naming |
+| **2** | Architecture, Data Models and API Contracts | `VERIFIED` | 14 / 14 | `READY_FOR_REVIEW` | None (`users` app naming resolved) |
 | **3** | Repository and Development Environment | `VERIFIED` | 10 / 10 | `READY_FOR_REVIEW` | None |
-| **4** | Backend Foundation, Models & Authentication | `IN_PROGRESS` | 4 / 11 | `NOT_READY` | Needs user approval to proceed with core models |
-| **5** | Core Backend APIs and CRUD Workflows | `NOT_STARTED` | 0 / 10 | `NOT_READY` | Depends on Phase 4 completion |
+| **4** | Backend Foundation, Models & Authentication | `IN_PROGRESS` | 8 / 11 | `NOT_READY` | Ready for `time_tracking` and `expenses` apps |
+| **5** | Core Backend APIs and CRUD Workflows | `IN_PROGRESS` | 3 / 10 | `NOT_READY` | Clients & Projects CRUD complete; Time & Expenses pending |
 | **6** | Financial Engine & Deterministic Risk | `NOT_STARTED` | 0 / 13 | `NOT_READY` | Depends on Phase 5 completion |
-| **7** | Frontend Foundation & Main User Workflows | `IN_PROGRESS` | 4 / 13 | `NOT_READY` | Mock prototype exists; real API integration pending backend |
+| **7** | Frontend Foundation & Main User Workflows | `IN_PROGRESS` | 6 / 13 | `NOT_READY` | Auth & Users connected to live API; domain workflows pending backend Phases 4–6 |
 | **8** | Gemini AI Risk Advisor | `NOT_STARTED` | 0 / 12 | `NOT_READY` | Depends on Phase 6 verified financial engine |
 | **9** | Integration, Security & Regression Testing | `NOT_STARTED` | 0 / 14 | `NOT_READY` | Depends on Phases 4–8 completion |
 | **10** | Documentation, Demo Data & Submission Prep | `IN_PROGRESS` | 5 / 14 | `NOT_READY` | Specs complete; demo data and rehearsed walk-through pending |
@@ -190,9 +190,10 @@ At the conclusion of each authorized task, report:
 - If a command was not run, explicitly state that it was not run.
 - If a test fails, report the exact failure and traceback honestly.
 
-### Rule 9: Keep `PROJECT_CONTEXT.md` Synchronized
-- Update this document when authorized or when completing milestones.
-- Keep task checklists, session states, and decision logs up to date.
+### Rule 9: Keep `PROJECT_CONTEXT.md` Synchronized After Every Work Completion
+- **Mandatory Trigger:** Immediately after completing any task, fix, refactoring, or milestone, update this document before proposing or starting subsequent work.
+- Record the exact work completed, files changed, and updated verification evidence.
+- Keep task checklists, session states, and decision logs strictly synchronized with codebase reality.
 - Avoid full document rewrites; apply focused, clean updates.
 
 ### Rule 10: Ask Before Resolving Consequential Ambiguity
@@ -367,35 +368,35 @@ Every phase must pass through an explicit review gate before progression:
   - [x] Task 4.1: Implement custom `User` model in `backend/users/models.py` with roles `MANAGER` and `TEAM_MEMBER`, `default_hourly_cost_rate`, and email authentication.
   - [x] Task 4.2: Create and apply user migrations (`0001_initial.py`, `0002_alter_user_role.py`).
   - [x] Task 4.3: Implement `seed_dev_users` command to create default manager and team member accounts.
-  - [x] Task 4.4: Author and pass comprehensive unit tests for `User` model, role properties, and authentication in `backend/users/tests.py` (8/8 tests pass).
-  - [ ] Task 4.5: Create `clients` Django app and implement `Client` model (`name`, `contact_name`, `contact_email`, `is_archived`, timestamps) with deletion protection.
-  - [ ] Task 4.6: Create `projects` Django app and implement `Project` model (`client`, `name`, `code`, `status`, `contract_revenue`, `planned_cost_budget`, `planned_hourly_cost_rate`, `estimated_remaining_hours`, `expected_remaining_expenses`, dates).
-  - [ ] Task 4.7: Implement `ProjectAssignment` model in `projects` with composite unique constraint `(project, user)`.
+  - [x] Task 4.4: Author and pass comprehensive unit tests for `User` model, role properties, registration, token blacklist, and user management in `backend/users/tests.py` (17/17 tests pass).
+  - [x] Task 4.5: Create `clients` Django app and implement `Client` model (`name`, `contact_name`, `contact_email`, `status`, `notes`, `is_archived`, timestamps) with deletion protection (`models.PROTECT`).
+  - [x] Task 4.6: Create `projects` Django app and implement `Project` model (`client`, `name`, `description`, `status`, `contract_revenue`, `planned_cost_budget`, `planned_hourly_cost`, `estimated_remaining_hours`, `expected_remaining_expenses`, dates).
+  - [x] Task 4.7: Implement `ProjectAssignment` model in `projects` with composite unique constraint `(project, user)`.
   - [ ] Task 4.8: Create `time_tracking` Django app and implement `TimeEntry` model (`project`, `user`, `work_date`, `hours`, `hourly_cost_snapshot`, `notes`) with rate snapshot logic on save.
   - [ ] Task 4.9: Create `expenses` Django app and implement `Expense` model (`project`, `user`, `category`, `amount`, `expense_date`, `status`, `receipt_url`, `notes`, `reviewed_by`, `reviewed_at`, `rejection_reason`).
-  - [ ] Task 4.10: Wire SimpleJWT authentication views (`/api/v1/auth/login/`, `/api/v1/auth/refresh/`, `/api/v1/auth/me/`).
-  - [ ] Task 4.11: Author comprehensive model constraint and relationship tests for all 5 new entities.
+  - [x] Task 4.10: Wire SimpleJWT authentication views (`/api/v1/auth/login/`, `/api/v1/auth/refresh/`, `/api/v1/auth/me/`, `/api/v1/auth/register/`, `/api/v1/auth/logout/`) and User Management API (`/api/v1/users/`).
+  - [ ] Task 4.11: Author comprehensive model constraint and relationship tests for all 5 new entities (Client, Project, and Assignment tests verified; TimeEntry and Expense pending).
 - **Expected Deliverables:** Django models, migrations, admin configurations, and test suites across all core domain entities.
 - **Acceptance Criteria:** All 6 domain models exist; migrations apply without conflicts; foreign keys enforce `PROTECT` on critical financial entities; unique constraints prevent duplicate assignments; user tests and model tests pass 100%.
 - **Required Verification:** `python manage.py test --keepdb` runs and passes.
 - **Common Mistakes to Avoid:** Allowing cascading deletion of projects when a client is deleted; forgetting immutable rate snapshots on `TimeEntry`.
 - **Scope Exclusions:** Business calculation services (Phase 6) and Gemini AI integration (Phase 8).
 - **Phase Results & Notes:**
-  - *Started:* October 18, 2026 | *Last Updated:* October 18, 2026
-  - *Current Progress:* `users` app is fully verified (8 tests passing). Next task is creating `clients` and `projects` models.
+  - *Started:* October 18, 2026 | *Last Updated:* October 19, 2026
+  - *Current Progress:* Tasks 4.1-4.7 and 4.10 complete. 39 unit and API tests passing cleanly across `users`, `clients`, and `projects`. Next task is Task 4.8 (`time_tracking` app and model).
 
 ---
 
 ### Phase 5 — Core Backend APIs and CRUD Workflows
 - **Phase ID:** `PHASE-05`
 - **Purpose:** Build RESTful DRF endpoints, serializers, permissions, and validation for ordinary business operations.
-- **Status:** `NOT_STARTED`
+- **Status:** `IN_PROGRESS`
 - **Gate Status:** `NOT_READY`
 - **Dependencies:** Phase 4 models and authentication verified.
 - **Tasks in Execution Order:**
-  - [ ] Task 5.1: Implement `ClientSerializer`, `ClientViewSet`, filtering, archiving, and manager-only permissions.
-  - [ ] Task 5.2: Implement `ProjectSerializer`, `ProjectViewSet`, lifecycle status validation, and role-based queryset filtering (Managers see all; Team Members see assigned only).
-  - [ ] Task 5.3: Implement `ProjectAssignmentViewSet` with assignment creation, listing, and revocation.
+  - [x] Task 5.1: Implement `ClientSerializer`, `ClientViewSet`, filtering, archiving, and manager-only permissions.
+  - [x] Task 5.2: Implement `ProjectSerializer`, `ProjectViewSet`, lifecycle status validation, dynamic field masking for `TEAM_MEMBER`, and role-based queryset filtering.
+  - [x] Task 5.3: Implement `ProjectAssignment` endpoints and sub-resource actions (listing, adding, revoking).
   - [ ] Task 5.4: Implement `TimeEntrySerializer`, `TimeEntryViewSet` with hours validation ($0 < H \le 24$), assignment checks, and automatic rate-snapshot population.
   - [ ] Task 5.5: Implement `ExpenseSerializer` and submission endpoint for assigned team members.
   - [ ] Task 5.6: Implement expense review action endpoint (`POST /api/v1/expenses/{id}/review/`) with approval state transitions and mandatory rejection reasons.
@@ -597,17 +598,18 @@ This section maps verified repository evidence against expected engineering asse
 | **4. Database Integrity** | Relational schema, deletion protections (`PROTECT`), composite constraints, index strategy. | `IN_PROGRESS` | `User` model and migrations exist; full ERD and constraints documented in `docs/data-model.md`. | Create `clients`, `projects`, `time_tracking`, and `expenses` Django models in Phase 4. |
 | **5. Frontend UX & Quality** | Responsive layout, role-specific UI, clear risk indicators, accessibility, loading/empty states. | `IN_PROGRESS` | Vite + React 19 prototype running; Tailwind CSS styled; `financial-engine.ts` integrated. | Connect UI components to live Django API endpoints in Phase 7. |
 | **6. AI/ML Engineering** | LLM advisory layer, context sanitization, prompt grounding, failure resilience, disclaimer. | `PLANNED` | Complete specification in `docs/ai-risk-advisor.md`. | Implement backend Gemini service and frontend panel in Phase 8. |
-| **7. Code Quality & Testing** | Unit tests, integration tests, PEP 8, strict TypeScript, clean Git history. | `IN_PROGRESS` | 8/8 backend user tests passing; clean Git commits on `master`; frontend compiles with zero errors. | Author tests for domain models, CRUD endpoints, and financial engine in Phases 4–6. |
-| **8. Demonstration & Defense** | Reproducible quickstart, demo data, clear explanation of architecture and trade-offs. | `IN_PROGRESS` | Detailed documentation suite; `seed_dev_users` command. | Build comprehensive `seed_demo_data` command in Phase 10. |
+| **7. Code Quality & Testing** | Unit tests, integration tests, PEP 8, strict TypeScript, clean Git history. | `IN_PROGRESS` | 39/39 backend tests passing (Users: 17, Clients: 8, Projects: 14); clean migrations; models verified. | Author tests for TimeEntry, Expense, and financial engine in Phases 4–6. |
+| **8. Demonstration & Defense** | Reproducible quickstart, demo data, clear explanation of architecture and trade-offs. | `IN_PROGRESS` | Detailed documentation suite; `seed_dev_users` command; working auto-fill login credentials. | Build comprehensive `seed_demo_data` command in Phase 10. |
 
 ---
 
 ## 9. Synchronization & Maintenance Instructions
 
 When updating this document in future agent sessions:
-1. Always update the **Current Session State** table at the top.
-2. Update the **Master Phase Tracker** tasks completed and statuses.
-3. Check off tasks in the **Detailed Phased Development Roadmap** only when acceptance criteria and tests have been verified with evidence.
-4. Record newly discovered decisions, trade-offs, or blockers in the **Decision Register**.
-5. Do not modify application source code or run migrations unless specifically authorized for that task.
-6. Present a concise checkpoint report to the user at the end of each session and await direction before advancing.
+1. **Mandatory Post-Task Protocol:** Update `PROJECT_CONTEXT.md` immediately following the completion of each task, fix, or sub-phase before presenting subsequent steps to the user.
+2. Always update the **Current Session State** table at the top.
+3. Update the **Master Phase Tracker** tasks completed and statuses.
+4. Check off tasks in the **Detailed Phased Development Roadmap** only when acceptance criteria and tests have been verified with evidence.
+5. Record newly discovered decisions, trade-offs, or blockers in the **Decision Register**.
+6. Do not modify application source code or run migrations unless specifically authorized for that task.
+7. Present a concise checkpoint report to the user at the end of each session and await direction before advancing.
