@@ -354,6 +354,7 @@ export async function registerNewUserWithApi(input: {
   | {
       ok: false;
       field?: string;
+      errors?: Record<string, string>;
       error: string;
     }
 > {
@@ -363,13 +364,19 @@ export async function registerNewUserWithApi(input: {
 
   try {
     const regResult = await apiClient.auth.register({
-      email: input.email,
+      email: input.email.trim().toLowerCase(),
       password: input.password,
       first_name,
       last_name,
       role: input.role,
       default_hourly_cost_rate: input.default_hourly_cost,
     });
+
+    // Ensure custom title is set on the user profile
+    if (input.title?.trim()) {
+      regResult.user.title = input.title.trim();
+      regResult.session.user.title = input.title.trim();
+    }
 
     saveActiveSession(regResult.session);
 
@@ -378,8 +385,13 @@ export async function registerNewUserWithApi(input: {
     try {
       const apiUsers = await apiClient.users.list();
       if (apiUsers && apiUsers.length > 0) {
-        saveStoredUsers(apiUsers);
-        updatedUsers = apiUsers;
+        // Preserve newly registered user's custom title & local credential cache
+        updatedUsers = apiUsers.map((u) =>
+          u.email.toLowerCase() === input.email.trim().toLowerCase()
+            ? { ...u, title: input.title?.trim() || u.title, password: input.password }
+            : u
+        );
+        saveStoredUsers(updatedUsers);
       }
     } catch {
       const newStored: StoredUserAccount = {
@@ -387,7 +399,7 @@ export async function registerNewUserWithApi(input: {
         title: input.title,
         password: input.password,
       };
-      updatedUsers = [...updatedUsers, newStored];
+      updatedUsers = [...updatedUsers.filter((u) => u.email.toLowerCase() !== input.email.trim().toLowerCase()), newStored];
       saveStoredUsers(updatedUsers);
     }
 
@@ -417,20 +429,160 @@ export async function registerNewUserWithApi(input: {
         ? 'email'
         : err.data?.password
         ? 'password'
+        : err.data?.default_hourly_cost_rate
+        ? 'default_hourly_cost'
         : 'root';
-      const msg = err.message || 'Registration failed.';
+      const cleanError = err.fieldErrors?.[field] || err.message || 'Registration failed.';
       return {
         ok: false,
         field,
-        error: msg,
+        errors: err.fieldErrors,
+        error: cleanError,
       };
     }
 
-    console.warn(
-      'Backend unavailable during registration, falling back to local credentials store:',
-      err?.message
-    );
-    return registerNewUser(input);
+    const networkErrorMsg =
+      err?.status === 0 || err?.message?.includes('Network error')
+        ? 'Cannot connect to MarginWatch backend API at http://127.0.0.1:8000. Please ensure the Django backend is running.'
+        : err?.message || 'Registration failed.';
+
+    return {
+      ok: false,
+      field: 'root',
+      error: networkErrorMsg,
+    };
+  }
+}
+
+/**
+ * Creates a new agency team member directly on the Django backend (POST /api/v1/users/)
+ * using the authenticated Manager's credentials, without overwriting the manager's active session.
+ */
+export async function createMemberWithApi(input: {
+  full_name: string;
+  email: string;
+  password?: string;
+  role: UserRole;
+  title?: string;
+  default_hourly_cost: number;
+  assign_to_active_projects?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      createdUser: StoredUserAccount;
+      updatedUsers: StoredUserAccount[];
+      updatedProjects: Project[];
+    }
+  | {
+      ok: false;
+      field?: string;
+      errors?: Record<string, string>;
+      error: string;
+    }
+> {
+  const parts = input.full_name.trim().split(/\s+/);
+  const first_name = parts[0] || 'Agency';
+  const last_name = parts.slice(1).join(' ') || 'Member';
+  const defaultPassword = input.password?.trim() || 'AgencyPassword123!';
+
+  try {
+    const createdAccount = await apiClient.users.create({
+      email: input.email.trim().toLowerCase(),
+      password: defaultPassword,
+      first_name,
+      last_name,
+      role: input.role,
+      default_hourly_cost_rate: input.default_hourly_cost,
+    });
+
+    let updatedUsers = loadStoredUsers();
+    try {
+      const apiUsers = await apiClient.users.list();
+      if (apiUsers && apiUsers.length > 0) {
+        updatedUsers = apiUsers;
+        saveStoredUsers(updatedUsers);
+      }
+    } catch {
+      updatedUsers = [
+        ...updatedUsers.filter((u) => u.id !== createdAccount.id),
+        {
+          ...createdAccount,
+          title: input.title?.trim() || (input.role === 'MANAGER' ? 'Agency Manager' : 'Software Engineer'),
+          password: defaultPassword,
+        },
+      ];
+      saveStoredUsers(updatedUsers);
+    }
+
+    const currentProjects = safeLoad<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
+    const shouldAssign = input.assign_to_active_projects ?? true;
+    const updatedProjects = shouldAssign
+      ? currentProjects.map((p) =>
+          p.status === 'ACTIVE' && !p.assigned_member_ids.includes(createdAccount.id)
+            ? { ...p, assigned_member_ids: [...p.assigned_member_ids, createdAccount.id] }
+            : p
+        )
+      : currentProjects;
+    persistProjects(updatedProjects);
+
+    return {
+      ok: true,
+      createdUser: createdAccount,
+      updatedUsers,
+      updatedProjects,
+    };
+  } catch (err: any) {
+    if (err instanceof ApiError && err.status > 0) {
+      const field = err.data?.email
+        ? 'email'
+        : err.data?.password
+        ? 'password'
+        : err.data?.default_hourly_cost_rate
+        ? 'default_hourly_cost'
+        : 'root';
+      const cleanError = err.fieldErrors?.[field] || err.message || 'Failed to create team member.';
+      return {
+        ok: false,
+        field,
+        errors: err.fieldErrors,
+        error: cleanError,
+      };
+    }
+
+    console.warn('Backend unavailable during member creation, adding to local fallback:', err?.message);
+    const activeSession = loadActiveSession();
+    const localResult = registerNewUser({
+      full_name: input.full_name,
+      email: input.email,
+      password: defaultPassword,
+      role: input.role,
+      title: input.title?.trim() || (input.role === 'MANAGER' ? 'Agency Manager' : 'Software Engineer'),
+      default_hourly_cost: input.default_hourly_cost,
+      assign_to_active_projects: input.assign_to_active_projects ?? true,
+    });
+
+    if (activeSession) {
+      saveActiveSession(activeSession);
+    }
+
+    if (localResult.ok === false) {
+      return {
+        ok: false,
+        field: localResult.field,
+        error: localResult.error,
+      };
+    }
+
+    const created = localResult.updatedUsers.find(
+      (u) => u.email.trim().toLowerCase() === input.email.trim().toLowerCase()
+    )!;
+
+    return {
+      ok: true,
+      createdUser: created,
+      updatedUsers: localResult.updatedUsers,
+      updatedProjects: localResult.updatedProjects,
+    };
   }
 }
 

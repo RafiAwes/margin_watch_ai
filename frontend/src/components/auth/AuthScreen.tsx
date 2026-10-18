@@ -106,9 +106,31 @@ export const AuthScreen: React.FC<{
     e.preventDefault();
     setRegErrors({});
 
-    const normalizedEmail = (
-      regEmail.trim() || `user.${Date.now()}@vanguard-agency.io`
-    ).toLowerCase();
+    const trimmedName = regFullName.trim();
+    if (!trimmedName) {
+      setRegErrors({
+        full_name: 'Full name is required.',
+        root: 'Full name is required.',
+      });
+      return;
+    }
+
+    const trimmedEmail = regEmail.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setRegErrors({
+        email: 'Work email is required.',
+        root: 'Work email is required.',
+      });
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setRegErrors({
+        email: 'Please enter a valid work email address.',
+        root: 'Please enter a valid work email address.',
+      });
+      return;
+    }
 
     if (!regPassword) {
       setRegErrors({
@@ -126,7 +148,15 @@ export const AuthScreen: React.FC<{
       return;
     }
 
-    if (regConfirmPassword && regPassword !== regConfirmPassword) {
+    if (!regConfirmPassword) {
+      setRegErrors({
+        confirm_password: 'Confirm password is required.',
+        root: 'Confirm password is required.',
+      });
+      return;
+    }
+
+    if (regPassword !== regConfirmPassword) {
       setRegErrors({
         confirm_password: 'Passwords do not match.',
         root: 'Passwords do not match.',
@@ -134,25 +164,21 @@ export const AuthScreen: React.FC<{
       return;
     }
 
+    const parsedCost = Number(regHourlyCost);
+    if (!regHourlyCost || Number.isNaN(parsedCost) || parsedCost <= 0) {
+      setRegErrors({
+        default_hourly_cost: 'Please enter a valid hourly rate greater than $0.',
+        root: 'Please enter a valid hourly rate greater than $0.',
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const parsedCost = Number(regHourlyCost);
-      const validCost =
-        !regHourlyCost || Number.isNaN(parsedCost) || parsedCost <= 0
-          ? regRole === 'MANAGER'
-            ? 135
-            : 115
-          : parsedCost;
-
       const result = await registerNewUserWithApi({
-        full_name:
-          regFullName.trim() ||
-          normalizedEmail
-            .split('@')[0]
-            .replace(/[._-]+/g, ' ')
-            .replace(/\b\w/g, (c) => c.toUpperCase()),
-        email: normalizedEmail,
+        full_name: trimmedName,
+        email: trimmedEmail,
         password: regPassword,
         role: regRole,
         title:
@@ -160,16 +186,20 @@ export const AuthScreen: React.FC<{
           (regRole === 'MANAGER'
             ? 'Agency Delivery Manager'
             : 'Senior Software Engineer'),
-        default_hourly_cost: validCost,
+        default_hourly_cost: parsedCost,
         assign_to_active_projects: true,
       });
 
       if (result.ok === false) {
         const field = result.field ?? 'root';
-        setRegErrors({
-          [field]: result.error,
+        const newErrors: Record<string, string> = {
           root: result.error,
-        });
+          [field]: result.error,
+        };
+        if (result.errors) {
+          Object.assign(newErrors, result.errors);
+        }
+        setRegErrors(newErrors);
         setIsSubmitting(false);
         return;
       }
