@@ -57,10 +57,15 @@ import {
   persistTimeEntries,
   resetWorkspaceToDefaults,
   saveActiveSession,
-  saveStoredUsers,
   buildProjectAiRiskAnalysis,
   signOutWithApi,
   syncUsersFromApi,
+  syncClientsFromApi,
+  syncProjectsFromApi,
+  saveClientWithApi,
+  archiveClientWithApi,
+  saveProjectWithApi,
+  updateProjectEstimateWithApi,
 } from './services/auth-and-store';
 import { onApiSessionExpired } from './services/api-client';
 import { AuthScreen } from './components/auth/AuthScreen';
@@ -148,7 +153,7 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Synchronize agency users directory from the backend when session is active
+  // Synchronize agency users, clients, and projects from backend when session is active
   useEffect(() => {
     if (session) {
       syncUsersFromApi().then((apiUsers) => {
@@ -156,15 +161,25 @@ export default function App() {
           setRegisteredUsers(apiUsers);
         }
       });
+      syncClientsFromApi().then((apiClients) => {
+        if (Array.isArray(apiClients)) {
+          setClients(apiClients);
+        }
+      });
+      syncProjectsFromApi().then((apiProjects) => {
+        if (Array.isArray(apiProjects)) {
+          setProjects(apiProjects);
+        }
+      });
     }
   }, [session]);
 
   // Navigation & Route State
   const [route, setRoute] = useState<WorkspaceRoute>('DASHBOARD');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('prj_01');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [projectDetailTab, setProjectDetailTab] =
     useState<ProjectDetailTab>('OVERVIEW');
-  const [selectedClientId, setSelectedClientId] = useState<string>('cli_01');
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [profileTab, setProfileTab] =
     useState<ProfileTab>('OVERVIEW_AND_EDIT');
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -292,12 +307,12 @@ export default function App() {
     () =>
       visibleProjects.find((p) => p.id === selectedProjectId) ??
       visibleProjects[0] ??
-      enrichedProjects[0],
-    [visibleProjects, enrichedProjects, selectedProjectId]
+      null,
+    [visibleProjects, selectedProjectId]
   );
 
   const selectedClient = useMemo(
-    () => clients.find((c) => c.id === selectedClientId) ?? clients[0],
+    () => clients.find((c) => c.id === selectedClientId) ?? clients[0] ?? null,
     [clients, selectedClientId]
   );
 
@@ -370,49 +385,46 @@ export default function App() {
   const isManager = currentUser.role === 'MANAGER';
 
   // Domain Mutation Handlers
-  const handleSaveProject = (
+  const handleSaveProject = async (
     projectData: Omit<Project, 'id' | 'updated_at'>
   ) => {
-    if (projectModalState.editingProject) {
-      const updatedId = projectModalState.editingProject.id;
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === updatedId
-            ? { ...projectData, id: updatedId, updated_at: '2026-10-17' }
-            : p
-        )
-      );
-      triggerToast(
-        `Saved changes to "${projectData.name}" and recalculated financials.`
-      );
-    } else {
-      const newId = `prj_${Date.now()}`;
-      setProjects((prev) => [
-        { ...projectData, id: newId, updated_at: '2026-10-17' },
-        ...prev,
-      ]);
-      setSelectedProjectId(newId);
+    const isEditing = Boolean(projectModalState.editingProject);
+    const targetId = projectModalState.editingProject?.id;
+    const saved = await saveProjectWithApi(projectData, targetId);
+
+    setProjects((prev) =>
+      isEditing
+        ? prev.map((p) => (p.id === targetId ? saved : p))
+        : [saved, ...prev]
+    );
+
+    if (!isEditing) {
+      setSelectedProjectId(saved.id);
       setRoute('PROJECT_DETAIL');
-      triggerToast(
-        projectData.estimated_remaining_hours === null
-          ? `Created "${projectData.name}" with unknown remaining hours (Forecast Unavailable).`
-          : `Created project "${projectData.name}".`
-      );
     }
+
+    triggerToast(
+      isEditing
+        ? `Saved changes to "${saved.name}" and recalculated financials.`
+        : saved.estimated_remaining_hours === null
+        ? `Created "${saved.name}" with unknown remaining hours (Forecast Unavailable).`
+        : `Created project "${saved.name}".`
+    );
     setProjectModalState({ open: false, editingProject: null });
   };
 
-  const handleSaveEstimate = (
+  const handleSaveEstimate = async (
     projectId: string,
     remainingHours: number | null
   ) => {
+    await updateProjectEstimateWithApi(projectId, remainingHours);
     setProjects((prev) =>
       prev.map((p) =>
         p.id === projectId
           ? {
               ...p,
               estimated_remaining_hours: remainingHours,
-              updated_at: '2026-10-17',
+              updated_at: new Date().toISOString(),
             }
           : p
       )
@@ -541,7 +553,7 @@ export default function App() {
     triggerToast('Rejected expense with remediation feedback.');
   };
 
-  const handleSaveClient = (data: {
+  const handleSaveClient = async (data: {
     name: string;
     contact_name: string;
     contact_email: string;
@@ -549,28 +561,28 @@ export default function App() {
     notes: string;
   }) => {
     if (!isManager) return;
-    if (clientModalState.editingClient) {
-      const cid = clientModalState.editingClient.id;
-      setClients((prev) =>
-        prev.map((c) => (c.id === cid ? { ...c, ...data } : c))
-      );
-      triggerToast(`Updated client "${data.name}".`);
-    } else {
-      const newClient: Client = {
-        id: `cli_${Date.now()}`,
-        ...data,
-        status: 'ACTIVE',
-        created_at: '2026-10-17',
-      };
-      setClients((prev) => [newClient, ...prev]);
-      setSelectedClientId(newClient.id);
+    const isEditing = Boolean(clientModalState.editingClient);
+    const targetId = clientModalState.editingClient?.id;
+    const saved = await saveClientWithApi(data, targetId);
+
+    setClients((prev) =>
+      isEditing
+        ? prev.map((c) => (c.id === targetId ? saved : c))
+        : [saved, ...prev]
+    );
+
+    if (!isEditing) {
+      setSelectedClientId(saved.id);
       setRoute('CLIENT_DETAIL');
-      triggerToast(`Created client "${data.name}".`);
     }
+
+    triggerToast(
+      isEditing ? `Updated client "${saved.name}".` : `Created client "${saved.name}".`
+    );
     setClientModalState({ open: false, editingClient: null });
   };
 
-  const handleArchiveClient = (client: Client) => {
+  const handleArchiveClient = async (client: Client) => {
     if (!isManager) return;
     const activeClientProjects = projects.filter(
       (p) => p.client_id === client.id && p.status === 'ACTIVE'
@@ -582,6 +594,8 @@ export default function App() {
       );
       return;
     }
+
+    await archiveClientWithApi(client.id);
     setClients((prev) =>
       prev.map((c) =>
         c.id === client.id
@@ -1420,7 +1434,19 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#E3E6ED] text-xs">
-                            {atRiskWatchlist.map((proj) => {
+                            {atRiskWatchlist.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={6}
+                                  className="py-10 text-center text-[#697386]"
+                                >
+                                  {enrichedProjects.length === 0
+                                    ? 'No active projects created yet. Create a project to start tracking delivery margin.'
+                                    : 'All active projects are operating within budget tolerances (100% Healthy).'}
+                                </td>
+                              </tr>
+                            ) : (
+                              atRiskWatchlist.map((proj) => {
                               const f = proj.financials;
                               const barColor =
                                 f.risk_status === 'CRITICAL'
@@ -1526,14 +1552,22 @@ export default function App() {
                                   </td>
                                 </tr>
                               );
-                            })}
-                          </tbody>
+                            })
+                          )}
+                        </tbody>
                         </table>
                       </div>
 
                       {/* Mobile Financial Ledger Cards (< 768px for 320px/375px/430px viewports) */}
                       <div className="md:hidden divide-y divide-[#E3E6ED]">
-                        {atRiskWatchlist.map((proj) => {
+                        {atRiskWatchlist.length === 0 ? (
+                          <div className="p-6 text-center text-xs text-[#697386]">
+                            {enrichedProjects.length === 0
+                              ? 'No active projects created yet.'
+                              : 'All active projects are operating within budget tolerances (100% Healthy).'}
+                          </div>
+                        ) : (
+                          atRiskWatchlist.map((proj) => {
                           const f = proj.financials;
                           return (
                             <div key={proj.id} className="p-4 space-y-3">
@@ -1608,8 +1642,9 @@ export default function App() {
                               </div>
                             </div>
                           );
-                        })}
-                      </div>
+                        })
+                      )}
+                    </div>
                     </div>
 
                     {/* Right 4 Cols: Expenses Awaiting Approval Queue */}
@@ -2122,7 +2157,17 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 text-xs">
-                          {filteredProjects.map((proj) => {
+                          {filteredProjects.length === 0 ? (
+                            <tr>
+                              <td
+                                colSpan={isManager ? 7 : 3}
+                                className="py-12 text-center text-slate-500 font-medium"
+                              >
+                                No projects found. Click &quot;New Project&quot; above to create one.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredProjects.map((proj) => {
                             const f = proj.financials;
                             return (
                               <tr key={proj.id} className="hover:bg-slate-50">
@@ -2211,15 +2256,21 @@ export default function App() {
                                 </td>
                               </tr>
                             );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                          })
+                        )}
+                      </tbody>
+                    </table>
                   </div>
+                </div>
 
-                  {/* Mobile Presentation: Financial Ledger Cards (< 768px) */}
-                  <div className="md:hidden space-y-3">
-                    {filteredProjects.map((proj) => {
+                {/* Mobile Presentation: Financial Ledger Cards (< 768px) */}
+                <div className="md:hidden space-y-3">
+                  {filteredProjects.length === 0 ? (
+                    <div className="bg-white border border-slate-200 rounded-lg p-8 text-center text-slate-500 text-xs font-medium">
+                      No projects found. Click &quot;New Project&quot; above to create one.
+                    </div>
+                  ) : (
+                    filteredProjects.map((proj) => {
                       const f = proj.financials;
                       return (
                         <div
@@ -2304,7 +2355,8 @@ export default function App() {
                           </button>
                         </div>
                       );
-                    })}
+                    })
+                  )}
                   </div>
                 </>
               )}
@@ -2312,33 +2364,54 @@ export default function App() {
           )}
 
           {/* ==================== 3. PROJECT DETAIL ROUTE (/projects/[id]) ==================== */}
-          {route === 'PROJECT_DETAIL' && selectedProject && (
-            <ProjectDetailView
-              project={selectedProject}
-              currentUser={currentUser}
-              timeEntries={timeEntries}
-              expenses={expenses}
-              initialTab={projectDetailTab}
-              onBack={() => setRoute('PROJECTS')}
-              onEditProject={(proj) =>
-                setProjectModalState({ open: true, editingProject: proj })
-              }
-              onOpenUpdateEstimate={(proj) =>
-                setUpdatingEstimateProject(proj)
-              }
-              onOpenLogTime={(projectId) => {
-                setLogTimeModalProject(projectId);
-                setIsLogTimeModalOpen(true);
-              }}
-              onDeleteTimeEntry={handleDeleteTimeEntry}
-              onOpenSubmitExpense={(projectId) => {
-                setSubmitExpenseModalProject(projectId);
-                setIsSubmitExpenseModalOpen(true);
-              }}
-              onDeletePendingExpense={handleDeletePendingExpense}
-              onApproveExpense={handleApproveExpense}
-              onRequestRejectExpense={(exp) => setRejectingExpense(exp)}
-            />
+          {route === 'PROJECT_DETAIL' && (
+            selectedProject ? (
+              <ProjectDetailView
+                project={selectedProject}
+                currentUser={currentUser}
+                timeEntries={timeEntries}
+                expenses={expenses}
+                initialTab={projectDetailTab}
+                onBack={() => setRoute('PROJECTS')}
+                onEditProject={(proj) =>
+                  setProjectModalState({ open: true, editingProject: proj })
+                }
+                onOpenUpdateEstimate={(proj) =>
+                  setUpdatingEstimateProject(proj)
+                }
+                onOpenLogTime={(projectId) => {
+                  setLogTimeModalProject(projectId);
+                  setIsLogTimeModalOpen(true);
+                }}
+                onDeleteTimeEntry={handleDeleteTimeEntry}
+                onOpenSubmitExpense={(projectId) => {
+                  setSubmitExpenseModalProject(projectId);
+                  setIsSubmitExpenseModalOpen(true);
+                }}
+                onDeletePendingExpense={handleDeletePendingExpense}
+                onApproveExpense={handleApproveExpense}
+                onRequestRejectExpense={(exp) => setRejectingExpense(exp)}
+              />
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-xl p-12 text-center max-w-md mx-auto my-12 space-y-4">
+                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                  <FolderKanban className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">No Project Selected</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Please select a project from the project list or create a new one.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRoute('PROJECTS')}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800"
+                >
+                  View All Projects
+                </button>
+              </div>
+            )
           )}
 
           {/* ==================== 4. TIME ENTRIES ROUTE (/time-entries) ==================== */}
@@ -2555,8 +2628,8 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 text-xs">
-                        {clients
-                          .filter((c) => {
+                        {(() => {
+                          const filtered = clients.filter((c) => {
                             const matchesQ =
                               clientSearch.trim() === '' ||
                               c.name
@@ -2569,8 +2642,20 @@ export default function App() {
                               clientStatusFilter === 'ALL' ||
                               c.status === clientStatusFilter;
                             return matchesQ && matchesSt;
-                          })
-                          .map((client) => {
+                          });
+                          if (filtered.length === 0) {
+                            return (
+                              <tr>
+                                <td
+                                  colSpan={6}
+                                  className="py-12 text-center text-slate-500 font-medium"
+                                >
+                                  No client organizations found. Click &quot;New Client&quot; above to create one.
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return filtered.map((client) => {
                             const clientProjects = enrichedProjects.filter(
                               (p) => p.client_id === client.id
                             );
@@ -2635,7 +2720,8 @@ export default function App() {
                                 </td>
                               </tr>
                             );
-                          })}
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </div>
@@ -2645,7 +2731,8 @@ export default function App() {
           )}
 
           {/* ==================== 6. CLIENT DETAIL (/clients/[id]) ==================== */}
-          {route === 'CLIENT_DETAIL' && selectedClient && isManager && (
+          {route === 'CLIENT_DETAIL' && isManager && (
+            selectedClient ? (
             <div className="space-y-6">
               <div className="bg-white border border-slate-200 rounded-lg p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2730,9 +2817,23 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-xs">
-                    {enrichedProjects
-                      .filter((p) => p.client_id === selectedClient.id)
-                      .map((p) => (
+                    {(() => {
+                      const clientProjects = enrichedProjects.filter(
+                        (p) => p.client_id === selectedClient.id
+                      );
+                      if (clientProjects.length === 0) {
+                        return (
+                          <tr>
+                            <td
+                              colSpan={6}
+                              className="py-8 text-center text-slate-500 font-medium"
+                            >
+                              No projects associated with this client organization.
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return clientProjects.map((p) => (
                         <tr key={p.id} className="hover:bg-slate-50">
                           <td className="py-3 px-4">
                             <button
@@ -2768,12 +2869,33 @@ export default function App() {
                             )}
                           </td>
                         </tr>
-                      ))}
+                      ));
+                    })()}
                   </tbody>
                 </table>
               </div>
             </div>
-          )}
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center max-w-md mx-auto my-12 space-y-4">
+              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">No Client Selected</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Please select a client organization from the client directory or create a new one.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRoute('CLIENTS')}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800"
+              >
+                View All Clients
+              </button>
+            </div>
+          )
+        )}
 
           {/* ==================== 7. GLOBAL EXPENSES ROUTE (/expenses) ==================== */}
           {route === 'EXPENSES' && (

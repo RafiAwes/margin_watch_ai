@@ -219,18 +219,25 @@ export const ProjectFormModal: React.FC<{
                 >
                   Client Organization <span className="text-red-600">*</span>
                 </label>
-                <select
-                  id="proj-client"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-                >
-                  {activeClients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.default_currency})
-                    </option>
-                  ))}
-                </select>
+                {activeClients.length === 0 ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                    No active clients available. Please create a client organization first.
+                  </div>
+                ) : (
+                  <select
+                    id="proj-client"
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  >
+                    <option value="" disabled>Select a client...</option>
+                    {activeClients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.default_currency})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div>
@@ -628,18 +635,25 @@ export const LogTimeModal: React.FC<{
             >
               Active Project <span className="text-red-600">*</span>
             </label>
-            <select
-              id="te-project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-            >
-              {activeProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.client_name})
-                </option>
-              ))}
-            </select>
+            {activeProjects.length === 0 ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                No active projects available to log work against.
+              </div>
+            ) : (
+              <select
+                id="te-project"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="" disabled>Select a project...</option>
+                {activeProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.client_name})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -832,18 +846,25 @@ export const SubmitExpenseModal: React.FC<{
             >
               Project <span className="text-red-600">*</span>
             </label>
-            <select
-              id="exp-project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
-            >
-              {activeProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.currency})
-                </option>
-              ))}
-            </select>
+            {activeProjects.length === 0 ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-xs text-amber-800">
+                No active projects available to submit expenses for.
+              </div>
+            ) : (
+              <select
+                id="exp-project"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                <option value="" disabled>Select a project...</option>
+                {activeProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.currency})
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
