@@ -128,8 +128,17 @@ desktop.ini
 logs/
 temp/
 tmp/
+<<<<<<< Updated upstream
+=======
 .neon
 
 # Private Project Context & Control Documents
 /PROJECT_CONTEXT.md
 .PROJECT_CONTEXT.md
+PROJECT_CONTEXT.md
+>>>>>>> Stashed changes
+
+# Private Project Context & Control Documents
+/PROJECT_CONTEXT.md
+.PROJECT_CONTEXT.md
+PROJECT_CONTEXT.md
