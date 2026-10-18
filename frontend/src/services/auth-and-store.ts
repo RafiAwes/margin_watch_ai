@@ -5,6 +5,7 @@ import {
   EnrichedProject,
   Expense,
   Project,
+  ProjectStatus,
   StoredUserAccount,
   TimeEntry,
   User,
@@ -167,9 +168,35 @@ export function loadWorkspaceData(): {
   timeEntries: TimeEntry[];
   expenses: Expense[];
 } {
+  const dummyClientIds = new Set(['cli_01', 'cli_02', 'cli_03', 'cli_04']);
+  const dummyProjectIds = new Set([
+    'prj_01',
+    'prj_02',
+    'prj_03',
+    'prj_04',
+    'prj_05',
+  ]);
+
+  const rawClients = safeLoad<Client[]>(STORAGE_KEYS.CLIENTS, INITIAL_CLIENTS);
+  const rawProjects = safeLoad<Project[]>(
+    STORAGE_KEYS.PROJECTS,
+    INITIAL_PROJECTS
+  );
+
+  const clients = rawClients.filter((c) => !dummyClientIds.has(c.id));
+  const projects = rawProjects.filter((p) => !dummyProjectIds.has(p.id));
+
+  // If legacy mock data was purged, immediately sync clean state back to storage
+  if (clients.length !== rawClients.length) {
+    persistClients(clients);
+  }
+  if (projects.length !== rawProjects.length) {
+    persistProjects(projects);
+  }
+
   return {
-    clients: safeLoad<Client[]>(STORAGE_KEYS.CLIENTS, INITIAL_CLIENTS),
-    projects: safeLoad<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS),
+    clients,
+    projects,
     timeEntries: safeLoad<TimeEntry[]>(
       STORAGE_KEYS.TIME_ENTRIES,
       INITIAL_TIME_ENTRIES
@@ -1139,4 +1166,206 @@ export function buildProjectAiRiskAnalysis(
         ? ['Missing required forecast input: estimated_remaining_hours is null.']
         : [],
   };
+}
+
+// -----------------------------------------------------------------------------
+// Client & Project API Integration Helpers
+// -----------------------------------------------------------------------------
+
+export function transformBackendClientToClient(backendClient: any): Client {
+  return {
+    id: String(backendClient.id),
+    name: backendClient.name,
+    contact_name: backendClient.contact_name || '',
+    contact_email: backendClient.contact_email || '',
+    default_currency: (backendClient.default_currency || 'USD') as 'USD' | 'EUR' | 'GBP',
+    status: backendClient.is_archived ? 'ARCHIVED' : 'ACTIVE',
+    notes: backendClient.notes || '',
+    created_at: backendClient.created_at || new Date().toISOString(),
+  };
+}
+
+export function transformBackendProjectToProject(backendProject: any): Project {
+  const estHours = backendProject.estimated_remaining_hours;
+  return {
+    id: String(backendProject.id),
+    client_id: String(backendProject.client?.id || backendProject.client_id || ''),
+    name: backendProject.name,
+    currency: (backendProject.currency || 'USD') as 'USD' | 'EUR' | 'GBP',
+    status: (backendProject.status || 'PLANNING') as ProjectStatus,
+    deadline: backendProject.deadline || null,
+    contract_revenue: backendProject.contract_revenue ? parseFloat(backendProject.contract_revenue) : 0,
+    planned_cost_budget: backendProject.planned_cost_budget ? parseFloat(backendProject.planned_cost_budget) : 0,
+    planned_hourly_cost: backendProject.planned_hourly_cost ? parseFloat(backendProject.planned_hourly_cost) : 0,
+    estimated_remaining_hours:
+      estHours !== null && estHours !== undefined && estHours !== '' ? parseFloat(estHours) : null,
+    assigned_member_ids: Array.isArray(backendProject.assigned_member_ids)
+      ? backendProject.assigned_member_ids.map(String)
+      : [],
+    updated_at: backendProject.updated_at || new Date().toISOString(),
+  };
+}
+
+export async function syncClientsFromApi(): Promise<Client[]> {
+  try {
+    const apiClients = await apiClient.clients.list(true);
+    if (Array.isArray(apiClients)) {
+      const transformed = apiClients.map(transformBackendClientToClient);
+      persistClients(transformed);
+      return transformed;
+    }
+  } catch (err) {
+    console.warn('Could not sync clients from backend API:', err);
+  }
+  return loadWorkspaceData().clients;
+}
+
+export async function syncProjectsFromApi(): Promise<Project[]> {
+  try {
+    const apiProjects = await apiClient.projects.list();
+    if (Array.isArray(apiProjects)) {
+      const transformed = apiProjects.map(transformBackendProjectToProject);
+      persistProjects(transformed);
+      return transformed;
+    }
+  } catch (err) {
+    console.warn('Could not sync projects from backend API:', err);
+  }
+  return loadWorkspaceData().projects;
+}
+
+export async function saveClientWithApi(
+  data: {
+    name: string;
+    contact_name?: string;
+    contact_email?: string;
+    notes?: string;
+    default_currency?: 'USD' | 'EUR' | 'GBP';
+  },
+  existingId?: string
+): Promise<Client> {
+  try {
+    let saved: any;
+    if (existingId) {
+      saved = await apiClient.clients.update(existingId, data);
+    } else {
+      saved = await apiClient.clients.create(data);
+    }
+    const client = transformBackendClientToClient(saved);
+    const current = loadWorkspaceData().clients;
+    const updated = existingId
+      ? current.map((c) => (c.id === existingId ? client : c))
+      : [client, ...current];
+    persistClients(updated);
+    return client;
+  } catch (err) {
+    console.warn('Backend client save error, falling back to local persistence:', err);
+    const newClient: Client = {
+      id: existingId || `cli_${Date.now()}`,
+      name: data.name,
+      contact_name: data.contact_name || '',
+      contact_email: data.contact_email || '',
+      default_currency: data.default_currency || 'USD',
+      status: 'ACTIVE',
+      notes: data.notes || '',
+      created_at: new Date().toISOString(),
+    };
+    const current = loadWorkspaceData().clients;
+    const updated = existingId
+      ? current.map((c) => (c.id === existingId ? newClient : c))
+      : [newClient, ...current];
+    persistClients(updated);
+    return newClient;
+  }
+}
+
+export async function archiveClientWithApi(clientId: string): Promise<void> {
+  try {
+    await apiClient.clients.archive(clientId);
+  } catch (err) {
+    console.warn('Backend client archive error, updating local state:', err);
+  }
+  const current = loadWorkspaceData().clients;
+  const updated = current.map((c) =>
+    c.id === clientId ? { ...c, status: (c.status === 'ARCHIVED' ? 'ACTIVE' : 'ARCHIVED') as any } : c
+  );
+  persistClients(updated);
+}
+
+export async function saveProjectWithApi(
+  projectData: Omit<Project, 'id' | 'updated_at'>,
+  existingId?: string
+): Promise<Project> {
+  try {
+    let saved: any;
+    if (existingId) {
+      saved = await apiClient.projects.update(existingId, {
+        name: projectData.name,
+        currency: projectData.currency,
+        status: projectData.status,
+        deadline: projectData.deadline,
+        contract_revenue: projectData.contract_revenue,
+        planned_cost_budget: projectData.planned_cost_budget,
+        planned_hourly_cost: projectData.planned_hourly_cost,
+        estimated_remaining_hours: projectData.estimated_remaining_hours,
+      });
+    } else {
+      saved = await apiClient.projects.create({
+        client_id: projectData.client_id,
+        name: projectData.name,
+        currency: projectData.currency,
+        status: projectData.status,
+        deadline: projectData.deadline,
+        contract_revenue: projectData.contract_revenue,
+        planned_cost_budget: projectData.planned_cost_budget,
+        planned_hourly_cost: projectData.planned_hourly_cost,
+        estimated_remaining_hours: projectData.estimated_remaining_hours,
+        initial_member_ids: projectData.assigned_member_ids,
+      });
+    }
+    const project = transformBackendProjectToProject(saved);
+    const current = loadWorkspaceData().projects;
+    const updated = existingId
+      ? current.map((p) => (p.id === existingId ? project : p))
+      : [project, ...current];
+    persistProjects(updated);
+    return project;
+  } catch (err) {
+    console.warn('Backend project save error, falling back to local persistence:', err);
+    const fallbackProject: Project = {
+      ...projectData,
+      id: existingId || `prj_${Date.now()}`,
+      updated_at: new Date().toISOString(),
+    };
+    const current = loadWorkspaceData().projects;
+    const updated = existingId
+      ? current.map((p) => (p.id === existingId ? fallbackProject : p))
+      : [fallbackProject, ...current];
+    persistProjects(updated);
+    return fallbackProject;
+  }
+}
+
+export async function updateProjectEstimateWithApi(
+  projectId: string,
+  remainingHours: number | null
+): Promise<void> {
+  try {
+    await apiClient.projects.update(projectId, {
+      estimated_remaining_hours: remainingHours,
+    });
+  } catch (err) {
+    console.warn('Backend estimate update error, updating local store:', err);
+  }
+  const current = loadWorkspaceData().projects;
+  const updated = current.map((p) =>
+    p.id === projectId
+      ? {
+          ...p,
+          estimated_remaining_hours: remainingHours,
+          updated_at: new Date().toISOString(),
+        }
+      : p
+  );
+  persistProjects(updated);
 }

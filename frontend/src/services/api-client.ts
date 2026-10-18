@@ -501,6 +501,123 @@ export const apiClient = {
     },
   },
 
+  // Clients Directory Endpoints
+  clients: {
+    async list(includeArchived = true): Promise<any[]> {
+      const query = includeArchived ? '' : '?is_archived=false';
+      const res = await apiClient.request<any[] | { results: any[] }>(`/clients/${query}`);
+      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
+      return list;
+    },
+
+    async get(id: string): Promise<any> {
+      return apiClient.request<any>(`/clients/${id}/`);
+    },
+
+    async create(data: {
+      name: string;
+      contact_name?: string;
+      contact_email?: string;
+      contact_phone?: string;
+      notes?: string;
+    }): Promise<any> {
+      return apiClient.request<any>('/clients/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    async update(id: string, updates: Record<string, any>): Promise<any> {
+      return apiClient.request<any>(`/clients/${id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+    },
+
+    async archive(id: string): Promise<{ detail: string; is_archived: boolean }> {
+      return apiClient.request<{ detail: string; is_archived: boolean }>(`/clients/${id}/`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  // Projects Delivery Endpoints
+  projects: {
+    async list(filters?: {
+      client_id?: string;
+      status?: string;
+      is_archived?: boolean;
+      search?: string;
+    }): Promise<any[]> {
+      const params = new URLSearchParams();
+      if (filters?.client_id) params.append('client_id', filters.client_id);
+      if (filters?.status && filters.status !== 'ALL') params.append('status', filters.status);
+      if (filters?.is_archived !== undefined) params.append('is_archived', String(filters.is_archived));
+      if (filters?.search) params.append('search', filters.search);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiClient.request<any[] | { results: any[] }>(`/projects/${qs}`);
+      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
+      return list;
+    },
+
+    async get(id: string): Promise<any> {
+      return apiClient.request<any>(`/projects/${id}/`);
+    },
+
+    async create(data: {
+      client_id: string;
+      name: string;
+      description?: string;
+      contract_revenue?: number;
+      planned_cost_budget: number;
+      planned_hourly_cost: number;
+      currency?: string;
+      estimated_remaining_hours?: number | null;
+      expected_remaining_expenses?: number;
+      status?: string;
+      start_date?: string | null;
+      deadline?: string | null;
+      initial_member_ids?: string[];
+    }): Promise<any> {
+      return apiClient.request<any>('/projects/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    async update(id: string, updates: Record<string, any>): Promise<any> {
+      return apiClient.request<any>(`/projects/${id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+    },
+
+    async archive(id: string): Promise<{ detail: string; is_archived: boolean }> {
+      return apiClient.request<{ detail: string; is_archived: boolean }>(`/projects/${id}/`, {
+        method: 'DELETE',
+      });
+    },
+
+    async getAssignments(projectId: string): Promise<any[]> {
+      const res = await apiClient.request<any[]>(`/projects/${projectId}/assignments/`);
+      return Array.isArray(res) ? res : [];
+    },
+
+    async assignMember(projectId: string, userId: string): Promise<any> {
+      return apiClient.request<any>(`/projects/${projectId}/assignments/`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId }),
+      });
+    },
+
+    async revokeAssignment(projectId: string, assignmentId: string): Promise<{ detail: string }> {
+      return apiClient.request<{ detail: string }>(`/projects/${projectId}/assignments/${assignmentId}/`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
   /**
    * Health check to detect whether the Django backend server is running and reachable.
    */
