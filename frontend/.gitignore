@@ -7,4 +7,6 @@ coverage/
 .env*
 !.env.example
 .aistudio
-.agent
+.agent/
+.claude/
+.gemini/

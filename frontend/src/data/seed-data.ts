@@ -30,6 +30,22 @@ export const TEAM_DIRECTORY: User[] = [
   DEMO_USERS.MANAGER,
   DEMO_USERS.TEAM_MEMBER,
   {
+    id: 'usr_mgr_backend',
+    email: 'manager@agency.com',
+    full_name: 'Sarah Connor',
+    role: 'MANAGER',
+    title: 'Agency Operations Director',
+    default_hourly_cost: 125,
+  },
+  {
+    id: 'usr_dev_backend',
+    email: 'dev@agency.com',
+    full_name: 'Alex Mercer',
+    role: 'TEAM_MEMBER',
+    title: 'Senior Software Engineer',
+    default_hourly_cost: 65,
+  },
+  {
     id: 'usr_dev_03',
     email: 'marcus.chen@vanguard-agency.io',
     full_name: 'Marcus Chen',

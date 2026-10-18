@@ -19,6 +19,7 @@ import {
   TEAM_DIRECTORY,
 } from '../data/seed-data';
 import { formatCurrency, formatHours, formatPercentage } from '../lib/financial-engine';
+import { apiClient, ApiError } from './api-client';
 
 const STORAGE_KEYS = {
   USERS: 'marginwatch_users_v1',
@@ -31,7 +32,14 @@ const STORAGE_KEYS = {
 
 const DEFAULT_ACCOUNTS: StoredUserAccount[] = TEAM_DIRECTORY.map((u) => ({
   ...u,
-  password: u.role === 'MANAGER' ? 'Manager123!' : 'Member123!',
+  password:
+    u.email === 'manager@agency.com'
+      ? 'ManagerPass123!'
+      : u.email === 'dev@agency.com'
+      ? 'DevPass123!'
+      : u.role === 'MANAGER'
+      ? 'Manager123!'
+      : 'Member123!',
   created_at: '2026-06-01',
 }));
 
@@ -228,6 +236,204 @@ export function authenticateUser(
   return { ok: true, session, updatedUsers, updatedProjects };
 }
 
+/**
+ * Authenticates user credentials authoritatively against the Django backend API
+ * (/api/v1/auth/login/). Saves JWT access & refresh tokens, loads authenticated user
+ * profile with rate masking, and syncs the agency user directory.
+ * Falls back gracefully to local credentials store if the backend is not reachable.
+ */
+export async function authenticateUserWithApi(
+  email: string,
+  password: string,
+  fallbackRole: UserRole = 'MANAGER'
+): Promise<
+  | {
+      ok: true;
+      session: AuthSession;
+      updatedUsers?: StoredUserAccount[];
+      updatedProjects?: Project[];
+      fromApi: boolean;
+    }
+  | {
+      ok: false;
+      error: string;
+    }
+> {
+  try {
+    const loginResult = await apiClient.auth.login(email, password);
+    saveActiveSession(loginResult.session);
+
+    // Attempt to load agency directory from backend
+    let updatedUsers: StoredUserAccount[] | undefined;
+    try {
+      const apiUsers = await apiClient.users.list();
+      if (apiUsers && apiUsers.length > 0) {
+        saveStoredUsers(apiUsers);
+        updatedUsers = apiUsers;
+      }
+    } catch {
+      // Non-critical if users list endpoint isn't accessible
+    }
+
+    return {
+      ok: true,
+      session: loginResult.session,
+      updatedUsers,
+      fromApi: true,
+    };
+  } catch (err: any) {
+    // If it's an explicit HTTP status error from the backend (401 invalid credentials, 400 bad request)
+    if (err instanceof ApiError && err.status > 0) {
+      return {
+        ok: false,
+        error: err.message || 'Invalid email or password.',
+      };
+    }
+
+    // Network error or backend offline: fallback to client-side credential store with a console notice
+    console.warn('Backend unavailable, falling back to local credentials store:', err?.message);
+    const fallbackResult = authenticateUser(email, password, fallbackRole);
+    return {
+      ...fallbackResult,
+      fromApi: false,
+    };
+  }
+}
+
+/**
+ * Logs out user by revoking the refresh token on the Django backend (/api/v1/auth/logout/)
+ * and clearing local session and tokens.
+ */
+export async function signOutWithApi(): Promise<void> {
+  try {
+    await apiClient.auth.logout();
+  } catch (e) {
+    console.warn('Backend logout revocation notice:', e);
+  } finally {
+    saveActiveSession(null);
+  }
+}
+
+/**
+ * Synchronizes user directory with the backend /api/v1/users/ endpoint.
+ */
+export async function syncUsersFromApi(): Promise<StoredUserAccount[]> {
+  try {
+    const apiUsers = await apiClient.users.list();
+    if (apiUsers && apiUsers.length > 0) {
+      saveStoredUsers(apiUsers);
+      return apiUsers;
+    }
+  } catch (e) {
+    console.warn('Could not sync users from backend API:', e);
+  }
+  return loadStoredUsers();
+}
+
+/**
+ * Registers a new agency user authoritatively with the Django backend API
+ * (/api/v1/auth/register/). Stores signed SimpleJWT tokens, activates session,
+ * and updates local workspace state.
+ * Falls back gracefully to local credentials store if the backend is unavailable.
+ */
+export async function registerNewUserWithApi(input: {
+  full_name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  title: string;
+  default_hourly_cost: number;
+  assign_to_active_projects?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      session: AuthSession;
+      updatedUsers: StoredUserAccount[];
+      updatedProjects: Project[];
+    }
+  | {
+      ok: false;
+      field?: string;
+      error: string;
+    }
+> {
+  const parts = input.full_name.trim().split(/\s+/);
+  const first_name = parts[0] || 'Agency';
+  const last_name = parts.slice(1).join(' ') || 'User';
+
+  try {
+    const regResult = await apiClient.auth.register({
+      email: input.email,
+      password: input.password,
+      first_name,
+      last_name,
+      role: input.role,
+      default_hourly_cost_rate: input.default_hourly_cost,
+    });
+
+    saveActiveSession(regResult.session);
+
+    // Sync directory from backend
+    let updatedUsers = loadStoredUsers();
+    try {
+      const apiUsers = await apiClient.users.list();
+      if (apiUsers && apiUsers.length > 0) {
+        saveStoredUsers(apiUsers);
+        updatedUsers = apiUsers;
+      }
+    } catch {
+      const newStored: StoredUserAccount = {
+        ...regResult.user,
+        title: input.title,
+        password: input.password,
+      };
+      updatedUsers = [...updatedUsers, newStored];
+      saveStoredUsers(updatedUsers);
+    }
+
+    const currentProjects = safeLoad<Project[]>(
+      STORAGE_KEYS.PROJECTS,
+      INITIAL_PROJECTS
+    );
+    const updatedProjects = currentProjects.map((p) =>
+      p.status === 'ACTIVE' && !p.assigned_member_ids.includes(regResult.user.id)
+        ? {
+            ...p,
+            assigned_member_ids: [...p.assigned_member_ids, regResult.user.id],
+          }
+        : p
+    );
+    persistProjects(updatedProjects);
+
+    return {
+      ok: true,
+      session: regResult.session,
+      updatedUsers,
+      updatedProjects,
+    };
+  } catch (err: any) {
+    if (err instanceof ApiError && err.status > 0) {
+      const field = err.data?.email
+        ? 'email'
+        : err.data?.password
+        ? 'password'
+        : 'root';
+      const msg = err.message || 'Registration failed.';
+      return {
+        ok: false,
+        field,
+        error: msg,
+      };
+    }
+
+    console.warn(
+      'Backend unavailable during registration, falling back to local credentials store:',
+      err?.message
+    );
+    return registerNewUser(input);
+  }
+}
+
 export function registerNewUser(input: {
   full_name: string;
   email: string;
@@ -390,6 +596,65 @@ export function updateUserProfile(
   };
 }
 
+/**
+ * Updates a user profile. If user is modifying own profile, invokes /api/v1/auth/me/.
+ * If user is a MANAGER modifying another agency account, invokes /api/v1/users/{id}/.
+ * Updates local store and active session.
+ */
+export async function updateUserProfileWithApi(
+  userId: string,
+  updates: {
+    full_name: string;
+    email: string;
+    title: string;
+    role: UserRole;
+    default_hourly_cost: number;
+    department?: string;
+    timezone?: string;
+    phone?: string;
+    bio?: string;
+    notification_preferences?: User['notification_preferences'];
+  }
+): Promise<
+  | {
+      ok: true;
+      updatedUser: User;
+      updatedUsers: StoredUserAccount[];
+      updatedSession: AuthSession | null;
+    }
+  | {
+      ok: false;
+      error: string;
+    }
+> {
+  const session = loadActiveSession();
+  const isSelf = session?.user.id === userId;
+
+  try {
+    if (isSelf) {
+      const parts = updates.full_name.trim().split(/\s+/);
+      const first_name = parts[0] || '';
+      const last_name = parts.slice(1).join(' ') || '';
+      await apiClient.auth.updateMe({ first_name, last_name });
+    } else if (session?.user.role === 'MANAGER') {
+      const parts = updates.full_name.trim().split(/\s+/);
+      await apiClient.users.update(userId, {
+        first_name: parts[0] || '',
+        last_name: parts.slice(1).join(' ') || '',
+        role: updates.role,
+        default_hourly_cost_rate: updates.default_hourly_cost,
+      });
+    }
+  } catch (err: any) {
+    console.warn('Could not persist profile changes to backend API, updating locally:', err?.message);
+    if (err instanceof ApiError && err.status === 400) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  return updateUserProfile(userId, updates);
+}
+
 export function updateUserPassword(
   userId: string,
   newPassword: string
@@ -483,8 +748,7 @@ export function buildProjectAiRiskAnalysis(
       rationale:
         'Auditing logged hours against remaining effort every Friday prevents late-stage budget surprises.',
       estimated_impact: `Preserves projected ${formatPercentage(
-        f.projected_margin_pct,
-        'target'
+        f.projected_margin_pct
       )} margin.`,
       action_type: 'RATE_AUDIT',
     });

@@ -34,6 +34,7 @@ import {
   registerNewUser,
   updateUserPassword,
   updateUserProfile,
+  updateUserProfileWithApi,
 } from '../../services/auth-and-store';
 
 export type ProfileTab =
@@ -163,7 +164,7 @@ export const UserProfileView: React.FC<{
     .slice(0, 2)
     .toUpperCase();
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setProfileError(null);
 
@@ -183,7 +184,7 @@ export const UserProfileView: React.FC<{
       return;
     }
 
-    const res = updateUserProfile(currentUser.id, {
+    const res = await updateUserProfileWithApi(currentUser.id, {
       full_name: fullName,
       email,
       title,
@@ -196,7 +197,7 @@ export const UserProfileView: React.FC<{
       notification_preferences: notifications,
     });
 
-    if (!res.ok) {
+    if (res.ok === false) {
       setProfileError(res.error);
       return;
     }
@@ -210,8 +211,8 @@ export const UserProfileView: React.FC<{
     }
   };
 
-  const handleSaveNotifications = () => {
-    const res = updateUserProfile(currentUser.id, {
+  const handleSaveNotifications = async () => {
+    const res = await updateUserProfileWithApi(currentUser.id, {
       full_name: currentUser.full_name,
       email: currentUser.email,
       title: currentUser.title,
@@ -263,9 +264,9 @@ export const UserProfileView: React.FC<{
     setEditMemberRate(String(member.default_hourly_cost));
   };
 
-  const saveEditedMember = (member: StoredUserAccount) => {
+  const saveEditedMember = async (member: StoredUserAccount) => {
     const parsedRate = Number(editMemberRate) || member.default_hourly_cost;
-    const res = updateUserProfile(member.id, {
+    const res = await updateUserProfileWithApi(member.id, {
       full_name: member.full_name,
       email: member.email,
       title: editMemberTitle,
