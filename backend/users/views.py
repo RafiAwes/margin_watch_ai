@@ -1,5 +1,6 @@
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -11,9 +12,42 @@ from users.serializers import (
     CustomTokenRefreshSerializer,
     LogoutSerializer,
     UserCreateSerializer,
+    UserRegisterSerializer,
     UserSerializer,
     UserUpdateSerializer,
 )
+
+
+class RegisterView(generics.CreateAPIView):
+    """
+    POST /api/v1/auth/register/
+    Public endpoint to create a new agency user account and issue signed JWT tokens.
+    """
+
+    permission_classes = [permissions.AllowAny]
+    serializer_class = UserRegisterSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+
+        response_data = {
+            "access": str(refresh.access_token),
+            "access_token": str(refresh.access_token),
+            "refresh": str(refresh),
+            "refresh_token": str(refresh),
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "role": user.role,
+            },
+        }
+        headers = self.get_success_headers(serializer.data)
+        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):

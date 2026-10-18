@@ -76,6 +76,22 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return User.objects.create_user(**validated_data)
 
 
+class UserRegisterSerializer(UserCreateSerializer):
+    """
+    Public registration serializer for new agency users.
+    Accepts email, password, and optional first_name, last_name, role, and rate.
+    """
+
+    first_name = serializers.CharField(required=False, allow_blank=True, default="")
+    last_name = serializers.CharField(required=False, allow_blank=True, default="")
+    default_hourly_cost_rate = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=4,
+        required=False,
+        default=Decimal("0.0000"),
+    )
+
+
 class UserUpdateSerializer(serializers.ModelSerializer):
     """
     Manager-only serializer to update user role, default hourly rate, or status.

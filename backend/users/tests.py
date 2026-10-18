@@ -302,3 +302,40 @@ class UserManagementTests(APITestCase):
 
         self.developer.refresh_from_db()
         self.assertFalse(self.developer.is_active)
+
+    def test_tc_auth_register_successful(self):
+        """Public registration creates user and returns JWT tokens with HTTP 201."""
+        register_url = reverse("users:auth-register")
+        payload = {
+            "email": "newuser@agency.com",
+            "password": "NewUserPass123!",
+            "first_name": "New",
+            "last_name": "User",
+            "role": UserRole.TEAM_MEMBER,
+        }
+        response = self.client.post(register_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("access_token", response.data)
+        self.assertIn("refresh_token", response.data)
+        self.assertEqual(response.data["user"]["email"], "newuser@agency.com")
+        self.assertTrue(User.objects.filter(email="newuser@agency.com").exists())
+
+    def test_tc_auth_register_duplicate_email(self):
+        """Registration with existing email is rejected with HTTP 400."""
+        register_url = reverse("users:auth-register")
+        payload = {
+            "email": "manager@agency.com",
+            "password": "AnyPassword123!",
+        }
+        response = self.client.post(register_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_tc_auth_register_short_password(self):
+        """Registration with password < 8 characters is rejected with HTTP 400."""
+        register_url = reverse("users:auth-register")
+        payload = {
+            "email": "shortpw@agency.com",
+            "password": "short",
+        }
+        response = self.client.post(register_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
