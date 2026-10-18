@@ -18,7 +18,8 @@ import {
 } from '../../types/domain';
 import {
   authenticateUser,
-  registerNewUser,
+  authenticateUserWithApi,
+  registerNewUserWithApi,
 } from '../../services/auth-and-store';
 import { formatCurrency } from '../../lib/financial-engine';
 
@@ -40,6 +41,7 @@ export const AuthScreen: React.FC<{
   const [loginRole, setLoginRole] = useState<UserRole>('MANAGER');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Registration State
   const [regFullName, setRegFullName] = useState('');
@@ -57,92 +59,132 @@ export const AuthScreen: React.FC<{
     (u) => u.email.trim().toLowerCase() === loginEmail.trim().toLowerCase()
   );
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
+    setIsSubmitting(true);
+
+    const defaultPassword =
+      matchedRegisteredUser?.password ||
+      (loginRole === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
 
     const emailToUse =
       loginEmail.trim() ||
       (loginRole === 'MANAGER'
-        ? 'alex.morgan@vanguard-agency.io'
-        : 'elena.rostova@vanguard-agency.io');
+        ? 'manager@agency.com'
+        : 'dev@agency.com');
 
-    const result = authenticateUser(
-      emailToUse,
-      loginPassword || 'any-password',
-      loginRole
-    );
+    const passwordToUse = loginPassword || defaultPassword;
 
-    onAuthSuccess(
-      result.session,
-      result.updatedUsers,
-      result.updatedProjects,
-      false
-    );
+    try {
+      const result = await authenticateUserWithApi(
+        emailToUse,
+        passwordToUse,
+        loginRole
+      );
+
+      if (result.ok === false) {
+        setLoginError(result.error);
+        setIsSubmitting(false);
+        return;
+      }
+
+      onAuthSuccess(
+        result.session,
+        result.updatedUsers,
+        result.updatedProjects,
+        false
+      );
+    } catch (err: any) {
+      setLoginError(err?.message || 'Authentication failed. Please verify credentials.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegErrors({});
 
-    const parsedCost = Number(regHourlyCost);
-    const validCost =
-      !regHourlyCost || Number.isNaN(parsedCost) || parsedCost <= 0
-        ? regRole === 'MANAGER'
-          ? 135
-          : 115
-        : parsedCost;
+    const normalizedEmail = (
+      regEmail.trim() || `user.${Date.now()}@vanguard-agency.io`
+    ).toLowerCase();
 
-    const rawEmail =
-      regEmail.trim() || `user.${Date.now()}@vanguard-agency.io`;
-    const normalizedEmail = rawEmail.includes('@')
-      ? rawEmail
-      : `${rawEmail}@vanguard-agency.io`;
+    if (!regPassword) {
+      setRegErrors({
+        password: 'Password is required.',
+        root: 'Password is required.',
+      });
+      return;
+    }
 
-    // If email already exists, sign right in with that account
-    const existing = registeredUsers.find(
-      (u) => u.email.trim().toLowerCase() === normalizedEmail.toLowerCase()
-    );
-    if (existing) {
-      const loginResult = authenticateUser(
-        existing.email,
-        regPassword || 'any-password',
-        regRole
+    if (regPassword.length < 8) {
+      setRegErrors({
+        password: 'Password must be at least 8 characters long.',
+        root: 'Password must be at least 8 characters long.',
+      });
+      return;
+    }
+
+    if (regConfirmPassword && regPassword !== regConfirmPassword) {
+      setRegErrors({
+        confirm_password: 'Passwords do not match.',
+        root: 'Passwords do not match.',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const parsedCost = Number(regHourlyCost);
+      const validCost =
+        !regHourlyCost || Number.isNaN(parsedCost) || parsedCost <= 0
+          ? regRole === 'MANAGER'
+            ? 135
+            : 115
+          : parsedCost;
+
+      const result = await registerNewUserWithApi({
+        full_name:
+          regFullName.trim() ||
+          normalizedEmail
+            .split('@')[0]
+            .replace(/[._-]+/g, ' ')
+            .replace(/\b\w/g, (c) => c.toUpperCase()),
+        email: normalizedEmail,
+        password: regPassword,
+        role: regRole,
+        title:
+          regTitle.trim() ||
+          (regRole === 'MANAGER'
+            ? 'Agency Delivery Manager'
+            : 'Senior Software Engineer'),
+        default_hourly_cost: validCost,
+        assign_to_active_projects: true,
+      });
+
+      if (result.ok === false) {
+        const field = result.field ?? 'root';
+        setRegErrors({
+          [field]: result.error,
+          root: result.error,
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      onAuthSuccess(
+        result.session,
+        result.updatedUsers,
+        result.updatedProjects,
+        true
       );
-      onAuthSuccess(loginResult.session);
-      return;
+    } catch (err: any) {
+      setRegErrors({ root: err?.message || 'Registration failed.' });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const result = registerNewUser({
-      full_name:
-        regFullName.trim() ||
-        normalizedEmail
-          .split('@')[0]
-          .replace(/[._-]+/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase()),
-      email: normalizedEmail,
-      password: regPassword || 'any-password',
-      role: regRole,
-      title:
-        regTitle.trim() ||
-        (regRole === 'MANAGER'
-          ? 'Agency Delivery Manager'
-          : 'Senior Software Engineer'),
-      default_hourly_cost: validCost,
-      assign_to_active_projects: true,
-    });
-
-    if (!result.ok) {
-      setRegErrors({ [result.field ?? 'root']: result.error });
-      return;
-    }
-
-    onAuthSuccess(
-      result.session,
-      result.updatedUsers,
-      result.updatedProjects,
-      true
-    );
   };
 
   const quickFillAccount = (account: StoredUserAccount) => {
@@ -476,9 +518,17 @@ export const AuthScreen: React.FC<{
 
                 <button
                   type="submit"
-                  className="w-full h-10 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-md transition-colors"
+                  disabled={isSubmitting}
+                  className="w-full h-10 bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  Sign In
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Authenticating with Backend...</span>
+                    </>
+                  ) : (
+                    'Sign In'
+                  )}
                 </button>
 
                 <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
@@ -770,9 +820,17 @@ export const AuthScreen: React.FC<{
 
                 <button
                   type="submit"
-                  className="w-full h-10 bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold rounded-md transition-colors"
+                  disabled={isSubmitting}
+                  className="w-full h-10 bg-blue-700 hover:bg-blue-800 disabled:opacity-60 text-white text-xs font-semibold rounded-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  Create Account & Enter Workspace
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Creating Account...</span>
+                    </>
+                  ) : (
+                    'Create Account & Enter Workspace'
+                  )}
                 </button>
               </form>
             )}

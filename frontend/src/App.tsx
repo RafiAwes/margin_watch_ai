@@ -59,7 +59,10 @@ import {
   saveActiveSession,
   saveStoredUsers,
   buildProjectAiRiskAnalysis,
+  signOutWithApi,
+  syncUsersFromApi,
 } from './services/auth-and-store';
+import { onApiSessionExpired } from './services/api-client';
 import { AuthScreen } from './components/auth/AuthScreen';
 import {
   BudgetForecastChart,
@@ -134,6 +137,27 @@ export default function App() {
   useEffect(() => {
     persistExpenses(expenses);
   }, [expenses]);
+
+  // Subscribe to API session expiry notifications (unrecoverable 401s)
+  useEffect(() => {
+    const unsubscribe = onApiSessionExpired(() => {
+      setSession(null);
+      setSignedOutNotice(true);
+      triggerToast('Your authentication session has expired. Please sign in again.');
+    });
+    return unsubscribe;
+  }, []);
+
+  // Synchronize agency users directory from the backend when session is active
+  useEffect(() => {
+    if (session) {
+      syncUsersFromApi().then((apiUsers) => {
+        if (apiUsers && apiUsers.length > 0) {
+          setRegisteredUsers(apiUsers);
+        }
+      });
+    }
+  }, [session]);
 
   // Navigation & Route State
   const [route, setRoute] = useState<WorkspaceRoute>('DASHBOARD');
@@ -317,7 +341,7 @@ export default function App() {
   };
 
   const handleSignOut = () => {
-    saveActiveSession(null);
+    signOutWithApi();
     setSession(null);
     setSignedOutNotice(true);
     setProfileMenuOpen(false);
@@ -1552,8 +1576,7 @@ export default function App() {
                                   <strong className="text-[#BE123C]">
                                     {formatCurrency(
                                       f.projected_final_cost,
-                                      proj.currency,
-                                      'Unavailable'
+                                      proj.currency
                                     )}
                                   </strong>
                                 </div>
@@ -2255,8 +2278,7 @@ export default function App() {
                                 <span className="font-semibold text-slate-900">
                                   {formatCurrency(
                                     f.projected_final_cost,
-                                    proj.currency,
-                                    'Unavailable'
+                                    proj.currency
                                   )}
                                 </span>
                               </div>
@@ -2266,8 +2288,7 @@ export default function App() {
                                 </span>
                                 <span className="font-semibold text-slate-900">
                                   {formatPercentage(
-                                    f.projected_margin_pct,
-                                    'Unavailable'
+                                    f.projected_margin_pct
                                   )}
                                 </span>
                               </div>

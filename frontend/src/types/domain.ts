@@ -48,6 +48,7 @@ export interface StoredUserAccount extends User {
 
 export interface AuthSession {
   token: string;
+  refresh_token?: string;
   user: User;
   issued_at: string;
   expires_at?: string;
