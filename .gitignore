@@ -129,3 +129,4 @@ logs/
 temp/
 tmp/
 .neon
+.PROJECT_CONTEXT.md
