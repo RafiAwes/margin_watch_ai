@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  AlertCircle,
   Bell,
   Briefcase,
   CheckCircle2,
@@ -31,7 +32,7 @@ import {
 } from '../../types/domain';
 import { formatCurrency, formatHours } from '../../lib/financial-engine';
 import {
-  registerNewUser,
+  createMemberWithApi,
   updateUserPassword,
   updateUserProfile,
   updateUserProfileWithApi,
@@ -136,6 +137,8 @@ export const UserProfileView: React.FC<{
   const [newMemberTitle, setNewMemberTitle] = useState('');
   const [newMemberRole, setNewMemberRole] = useState<UserRole>('TEAM_MEMBER');
   const [newMemberRate, setNewMemberRate] = useState('115');
+  const [isCreatingMember, setIsCreatingMember] = useState(false);
+  const [createMemberError, setCreateMemberError] = useState<string | null>(null);
 
   // Personal Activity Metrics
   const userTimeEntries = timeEntries.filter(
@@ -303,42 +306,64 @@ export const UserProfileView: React.FC<{
     }
   };
 
-  const handleCreateMember = (e: React.FormEvent) => {
+  const handleCreateMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMemberName.trim() || !newMemberEmail.trim()) return;
-    const parsedRate = Number(newMemberRate) || 115;
+    setCreateMemberError(null);
 
-    // Preserve active manager session while adding a new user to directory
-    const previousSession = session;
-    const result = registerNewUser({
-      full_name: newMemberName,
-      email: newMemberEmail,
-      password: 'AgencyPassword123!',
-      role: newMemberRole,
-      title:
-        newMemberTitle.trim() ||
-        (newMemberRole === 'MANAGER'
-          ? 'Delivery Manager'
-          : 'Software Engineer'),
-      default_hourly_cost: parsedRate,
-      assign_to_active_projects: true,
-    });
+    const name = newMemberName.trim();
+    const emailAddr = newMemberEmail.trim().toLowerCase();
 
-    if (result.ok) {
-      // Restore the manager's own session so adding a team member doesn't switch the active user
-      window.localStorage.setItem(
-        'marginwatch_session_v1',
-        JSON.stringify(previousSession)
-      );
+    if (!name) {
+      setCreateMemberError('Full name is required.');
+      return;
+    }
+    if (!emailAddr) {
+      setCreateMemberError('Work email is required.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddr)) {
+      setCreateMemberError('Please enter a valid work email address.');
+      return;
+    }
+
+    const parsedRate = Number(newMemberRate) || (newMemberRole === 'MANAGER' ? 135 : 115);
+    setIsCreatingMember(true);
+
+    try {
+      const result = await createMemberWithApi({
+        full_name: name,
+        email: emailAddr,
+        password: 'AgencyPassword123!',
+        role: newMemberRole,
+        title:
+          newMemberTitle.trim() ||
+          (newMemberRole === 'MANAGER'
+            ? 'Delivery Manager'
+            : 'Software Engineer'),
+        default_hourly_cost: parsedRate,
+        assign_to_active_projects: true,
+      });
+
+      if (result.ok === false) {
+        setCreateMemberError(result.error || 'Failed to create team member.');
+        setIsCreatingMember(false);
+        return;
+      }
+
       setNewMemberName('');
       setNewMemberEmail('');
       setNewMemberTitle('');
       setShowAddMemberForm(false);
+      setIsCreatingMember(false);
+
       onUsersDirectoryUpdated(
         result.updatedUsers,
         result.updatedProjects,
-        `Added ${newMemberName.trim()} (${newMemberRole}) to the agency directory.`
+        `Added ${name} (${newMemberRole}) to the agency directory.`
       );
+    } catch (err: any) {
+      setCreateMemberError(err?.message || 'Failed to create team member.');
+      setIsCreatingMember(false);
     }
   };
 
@@ -1161,6 +1186,15 @@ export const UserProfileView: React.FC<{
               onSubmit={handleCreateMember}
               className="p-5 bg-slate-50 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end"
             >
+              {createMemberError && (
+                <div
+                  role="alert"
+                  className="sm:col-span-5 p-2.5 rounded bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{createMemberError}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-[11px] font-medium text-slate-700 mb-1">
                   Full Name *
@@ -1226,9 +1260,17 @@ export const UserProfileView: React.FC<{
               </div>
               <button
                 type="submit"
-                className="h-9 px-3 text-xs font-semibold text-white bg-blue-700 rounded hover:bg-blue-800"
+                disabled={isCreatingMember}
+                className="h-9 px-3 text-xs font-semibold text-white bg-blue-700 rounded hover:bg-blue-800 disabled:opacity-60 flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
               >
-                Create Account
+                {isCreatingMember ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  'Create Account'
+                )}
               </button>
             </form>
           )}

@@ -42,6 +42,7 @@ export class ApiError extends Error {
   public status: number;
   public data: any;
   public isAuthError: boolean;
+  public fieldErrors: Record<string, string>;
 
   constructor(message: string, status: number, data: any = null) {
     super(message);
@@ -49,6 +50,17 @@ export class ApiError extends Error {
     this.status = status;
     this.data = data;
     this.isAuthError = status === 401;
+    this.fieldErrors = {};
+
+    if (data && typeof data === 'object') {
+      for (const [key, val] of Object.entries(data)) {
+        if (Array.isArray(val) && val.length > 0) {
+          this.fieldErrors[key] = String(val[0]);
+        } else if (typeof val === 'string') {
+          this.fieldErrors[key] = val;
+        }
+      }
+    }
   }
 }
 
@@ -441,7 +453,8 @@ export const apiClient = {
   users: {
     async list(includeInactive = false): Promise<StoredUserAccount[]> {
       const query = includeInactive ? '?include_inactive=true' : '';
-      const list = await apiClient.request<BackendUser[]>(`/users/${query}`);
+      const res = await apiClient.request<BackendUser[] | { results: BackendUser[] }>(`/users/${query}`);
+      const list = Array.isArray(res) ? res : (res && Array.isArray((res as any).results)) ? (res as any).results : [];
       return list.map(transformBackendUserToStoredUser);
     },
 
