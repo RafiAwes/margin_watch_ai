@@ -179,6 +179,8 @@ marginwatch/
 │   ├── testing-strategy.md        # Test pyramid, test matrix, and high-risk edge cases
 │   ├── ai-risk-advisor.md         # AI specifications, prompt design, and 15 benchmark scenarios
 │   ├── development-roadmap.md     # 10-phase milestone roadmap from Phase 0 to Phase 9
+│   ├── backend/
+│   │   └── backend-apps-and-data-models.md # Modular Django apps, models, fields, and service contracts
 │   └── decisions/
 │       ├── ADR-001-initial-architecture.md # Stack decisions, trade-offs, and rationale
 │       ├── ADR-002-single-agency-architecture.md # Single-agency architecture constraint and rationale

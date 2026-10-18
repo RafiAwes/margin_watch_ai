@@ -4,7 +4,8 @@
 **Last Updated:** October 2026  
 **Audience:** System Architects, Backend Engineers, Frontend Engineers  
 **Architecture Authority:** [ADR-001: Initial Architecture](decisions/ADR-001-initial-architecture.md) | [ADR-002: Single-Agency Architecture](decisions/ADR-002-single-agency-architecture.md)  
-**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-003: Financial Rules](decisions/ADR-003-financial-rules-and-risk-classification.md)
+**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-003: Financial Rules](decisions/ADR-003-financial-rules-and-risk-classification.md)  
+**Backend Apps & Models Blueprint:** [docs/backend/backend-apps-and-data-models.md](backend/backend-apps-and-data-models.md)
 
 ---
 
