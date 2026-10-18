@@ -3,13 +3,13 @@
 **Document Status:** Authoritative Source of Truth (Phase 0)  
 **Last Updated:** October 2026  
 **Audience:** Backend Engineers, Financial Domain Experts, Quality Assurance  
-**Architecture Decision Record:** [ADR-002: Financial Rules and Risk Classification](decisions/ADR-002-financial-rules-and-risk-classification.md)
+**Architecture Decision Record:** [ADR-002: Single-Agency Architecture](decisions/ADR-002-single-agency-architecture.md) | [ADR-003: Financial Rules and Risk Classification](decisions/ADR-003-financial-rules-and-risk-classification.md)
 
 ---
 
 ## 1. Overview & Core Philosophy
 
-MarginWatch provides small- to mid-sized software agencies with transparent, deterministic financial monitoring. In agency delivery operations, profitability is eroded when recorded labor hours and direct expenses outpace initial budgets without detection.
+MarginWatch provides a single software agency with transparent, deterministic project profitability and budget risk monitoring. In agency delivery operations, profitability is eroded when recorded labor hours and direct expenses outpace initial budgets without detection.
 
 To prevent catastrophic budget overruns, MarginWatch establishes an authoritative backend calculation engine governed by three foundational pillars:
 1. **Absolute Determinism:** Given identical recorded time entries, approved expenses, and project baselines, the engine must produce the exact same figures down to the penny across all execution environments.
@@ -26,16 +26,16 @@ Financial metrics in MarginWatch are categorized strictly into **Actual Financia
 
 | Term | Symbol | Classification | Conceptual Definition | Persistence & Mutability |
 | :--- | :---: | :---: | :--- | :--- |
-| **Contract Revenue** | $R$ | Baseline | The total monetary value the client has agreed to pay the agency for the contracted scope of work (fixed-price cap or agreed budget limit). | Stored on `Project`. Configurable only by Agency Managers. |
-| **Planned Cost Budget** | $B$ | Baseline | The internal delivery-cost ceiling established by agency management (direct labor cost + direct expenses) to deliver the project. | Stored on `Project`. Configurable only by Agency Managers. |
+| **Contract Revenue** | $R$ | Baseline | The total monetary value the client has agreed to pay the agency for the contracted scope of work (fixed-price cap or agreed budget limit). | Stored on `Project`. Configurable only by Managers (`MANAGER`). |
+| **Planned Cost Budget** | $B$ | Baseline | The internal delivery-cost ceiling established by agency management (direct labor cost + direct expenses) to deliver the project. | Stored on `Project`. Configurable only by Managers (`MANAGER`). |
 | **Recorded Work Hours** | $H_{entry}$ | Actual | The duration of labor logged in a single time entry by an authorized team member. | Stored on `TimeEntry`. Valid range: $0.00 < H_{entry} \le 24.00$. |
-| **Historical Internal Hourly Cost** | $C_{entry}$ | Actual | The personal hourly cost rate of the team member at the moment the time entry was created. Saved as `cost_rate_snapshot`. | Stored on `TimeEntry`. **Permanently immutable.** |
-| **Planned Internal Hourly Cost** | $C_{hourly\_plan}$ | Forecast / Baseline | The blended hourly cost rate used to value future remaining estimated labor. | Stored on `Project`. Configurable by Agency Managers. |
+| **Historical Internal Hourly Cost** | $C_{entry}$ | Actual | The personal hourly cost rate of the team member at the moment the time entry was created. Saved as `hourly_cost_snapshot`. | Stored on `TimeEntry`. **Permanently immutable.** |
+| **Planned Internal Hourly Cost** | $C_{hourly\_plan}$ | Forecast / Baseline | The blended hourly cost rate used to value future remaining estimated labor. | Stored on `Project`. Configurable by Managers (`MANAGER`). |
 | **Estimated Remaining Hours** | $H_{rem}$ | Forecast | The estimated labor hours required to complete all outstanding project deliverables. | Stored on `Project` (nullable). `null` = unknown; `0.0` = complete. |
-| **Approved Expenses** | $E_{appr}$ | Actual | Direct project expenditures (e.g., subcontractors, software licenses) approved by an Agency Manager. | Derived from `Expense` where `status = APPROVED`. |
+| **Approved Expenses** | $E_{appr}$ | Actual | Direct project expenditures (e.g., subcontractors, software licenses) approved by a Manager. | Derived from `Expense` where `status = APPROVED`. |
 | **Pending Expenses** | $E_{pend}$ | Operational | Submitted project expenditures awaiting manager review. **Excluded from actual costs.** | Derived from `Expense` where `status = PENDING`. |
 | **Rejected Expenses** | $E_{rej}$ | Operational | Submitted project expenditures rejected by management. **Permanently excluded from actual costs.** | Derived from `Expense` where `status = REJECTED`. |
-| **Expected Remaining Expenses** | $E_{rem}$ | Forecast | Anticipated direct future expenses not yet incurred. Defaults to `$0.00` in the MVP. | Stored on `Project`. Configurable by Agency Managers. |
+| **Expected Remaining Expenses** | $E_{rem}$ | Forecast | Anticipated direct future expenses not yet incurred. Defaults to `$0.00` in the MVP. | Stored on `Project`. Configurable by Managers (`MANAGER`). |
 | **Actual Labor Cost** | $C_{labor}$ | Actual | The cumulative monetary cost of all internal labor logged against the project to date. | Derived dynamically via deterministic sum of products. |
 | **Actual Expense Cost** | $C_{expense}$ | Actual | The cumulative sum of all approved project expenses. | Derived dynamically via sum of approved expenses. |
 | **Actual Total Cost** | $C_{actual}$ | Actual | Total financial expenditure burned to date ($C_{labor} + C_{expense}$). | Derived dynamically. |
@@ -191,12 +191,12 @@ Direct project expenditures follow a strict managerial review lifecycle:
 | **`REJECTED`** | **No** | Permanently excluded from actual costs and forecasts. |
 
 ### 6.1 Approval Authority
-- Only authenticated users with the `AGENCY_MANAGER` role can approve or reject expenses.
+- Only authenticated users with the `MANAGER` role can approve or reject expenses.
 - Rejecting an expense requires a mandatory, non-empty `rejection_reason`.
 
 ### 6.2 Preventing Double-Counting Between Actuals and Forecasts
 - **The Double-Counting Hazard:** If a manager anticipates a $1,000 subcontractor bill and enters $E_{rem} = \$1,000$, and the subcontractor later submits an expense that gets approved ($C_{expense} = \$1,000$), failing to decrement $E_{rem}$ would count the $1,000 twice ($C_{actual} + E_{rem} = \$1,000 + \$1,000 = \$2,000$).
-- **Rule for MVP:** In the MVP, $E_{rem}$ defaults to `$0.00`. Expected remaining expenses represent *un-incurred* future expenses only. When an expense is approved, it enters $C_{expense}$. If an agency explicitly configures $E_{rem}$, the manager must decrement $E_{rem}$ when the corresponding expense is approved. The API documentation explicitly reminds managers of this rule.
+- **Rule for MVP:** In the MVP, $E_{rem}$ defaults to `$0.00`. Expected remaining expenses represent *un-incurred* future expenses only. When an expense is approved, it enters $C_{expense}$. If a manager explicitly configures $E_{rem}$, the manager must decrement $E_{rem}$ when the corresponding expense is approved. The API documentation explicitly reminds managers of this rule.
 
 ---
 

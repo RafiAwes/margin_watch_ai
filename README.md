@@ -1,12 +1,23 @@
 # MarginWatch — Project Profitability & Budget Watchdog
 
-A modern, full-stack financial monitoring and delivery-cost watchdog built for small- to mid-sized software agencies.
+A modern, full-stack financial monitoring and delivery-cost watchdog built for a single software agency.
 
 ---
 
 ## 1. Project Overview & Problem Statement
 
-Small software agencies routinely face a critical operational hazard: **projects that silently exceed their planned delivery-cost budgets before management detects the overrun.**
+MarginWatch is a project profitability and budget risk tracker used by **one software agency only**.
+
+The application has:
+- **One agency** represented implicitly by the application itself (no `Agency` or `AgencyMembership` database models; this is not a multi-tenant SaaS platform).
+- **Users** with application roles: `MANAGER` and `TEAM_MEMBER`.
+- **Clients** belonging to the agency application.
+- **Projects** belonging to clients.
+- **Team members** assigned to projects via `ProjectAssignment`.
+- **Time entries** recording labor and historical rate-snapshotted labor costs.
+- **Expenses** with a two-stage submission and approval workflow.
+
+In software agency delivery, projects frequently face a critical operational hazard: **projects that silently exceed their planned delivery-cost budgets before management detects the overrun.**
 
 This failure mode typically occurs due to:
 * **Unrecorded or Delayed Time Tracking:** Labor costs accumulate invisibly between billing cycles.
@@ -34,24 +45,29 @@ MarginWatch establishes an automated early-warning watchdog for agency delivery 
 
 For complete mathematical definitions, rules, and worked examples, see:
 * [`docs/financial-rules.md`](docs/financial-rules.md)
-* [`docs/decisions/ADR-002-financial-rules-and-risk-classification.md`](docs/decisions/ADR-002-financial-rules-and-risk-classification.md)
+* [`docs/decisions/ADR-002-single-agency-architecture.md`](docs/decisions/ADR-002-single-agency-architecture.md)
+* [`docs/decisions/ADR-003-financial-rules-and-risk-classification.md`](docs/decisions/ADR-003-financial-rules-and-risk-classification.md)
 
 ---
 
 ## 3. Intended Users & Primary Roles
 
+Application roles are controlled fields on the user model, completely distinct from Django's administrative flags (`is_staff`, `is_superuser`). Only authorized managers can assign or modify roles; self-elevation is barred.
+
 | Role | Responsibilities & Access |
 | :--- | :--- |
-| **Agency Manager** | Full financial visibility across all agency clients and projects. Configures project budgets, contract revenues, and employee cost rates; reviews, approves, or rejects project expenses; analyzes deterministic risk statuses; and requests AI risk advice. |
-| **Team Member** | Scoped access to assigned projects. Logs daily work hours, views their own logged time entries, and submits project-related reimbursable expenses with receipt references. Does not have access to client contracts, agency budgets, profit margins, or colleague wage rates. |
+| **`MANAGER`** | Full operational and financial visibility across all agency clients and projects. Configures clients, project budgets, contract revenues, and employee cost rates; assigns team members to projects; reviews, approves, or rejects project expenses; analyzes deterministic risk statuses; and requests AI risk advice. |
+| **`TEAM_MEMBER`** | Scoped access strictly to assigned projects (`ProjectAssignment`). Logs daily work hours against active assignments, views their own logged time entries, and submits project-related reimbursable expenses with receipts. Has zero access to client contracts, agency cost budgets, profit margins, or colleague wage rates. |
 
 ---
 
 ## 4. Planned Core Features (v1.0 MVP)
 
+MarginWatch is structured around exactly six core domain models: `User`, `Client`, `Project`, `ProjectAssignment`, `TimeEntry`, and `Expense`.
+
 * **Client & Project Baselines:** Manage client accounts and establish project budgets, contract revenues, and estimated remaining effort.
-* **Rate-Snapshotted Time Entries:** Team members log hours against assigned projects. The system captures the user's active hourly cost rate at the exact moment of entry (`cost_rate_snapshot`), ensuring historical project financials are immutable against future wage changes.
-* **Expense Approval State Machine:** Logged direct expenses initiate in `PENDING` status and are excluded from project costs until an Agency Manager explicitly reviews and marks them `APPROVED` or `REJECTED` (with mandatory reason).
+* **Rate-Snapshotted Time Entries:** Team members log hours against assigned projects. The system captures the user's active hourly cost rate at the exact moment of entry (`hourly_cost_snapshot`), ensuring historical project financials are immutable against future wage changes.
+* **Expense Approval State Machine:** Logged direct expenses initiate in `PENDING` status and are excluded from project costs until a Manager explicitly reviews and marks them `APPROVED` or `REJECTED` (with mandatory reason).
 * **Deterministic Financial Engine:** Pure, backend-authoritative calculation service using exact fixed-point decimal arithmetic to compute labor costs, budget consumption, projected final costs, and profit margins.
 * **Four-Tier Risk Classification:** Projects are deterministically categorized via a strict precedence hierarchy into `healthy`, `at_risk`, `over_budget`, or `insufficient_data`.
 * **AI Risk Advisor:** A server-side advisory service powered by Google Gemini that generates plain-language executive summaries, pinpoints primary risk drivers, and recommends 2 to 4 practical operational interventions based strictly on calculated metrics.
@@ -71,7 +87,11 @@ For complete mathematical definitions, rules, and worked examples, see:
 
 ## 6. High-Level Architecture
 
-MarginWatch enforces a decoupled, **backend-authoritative** architecture:
+MarginWatch enforces a decoupled, **backend-authoritative** architecture for a **single software agency**:
+
+* **Single-Agency Architectural Law:** MarginWatch operates as a single-agency application represented implicitly by the system itself. No multi-tenant agency tables or agency memberships exist.
+* **Authoritative DRF Enforcement:** Django REST Framework is strictly authoritative for authentication, role-based authorization, project assignment validation, financial calculations, and serializer data masking.
+* **Decoupled Frontend Presentation:** Next.js functions as a decoupled consumer of backend API contracts. Hiding UI controls or client-side checks is never treated as an authorization mechanism.
 
 ```
 [ Browser Client ]
@@ -95,6 +115,8 @@ MarginWatch enforces a decoupled, **backend-authoritative** architecture:
 For architectural decisions, trade-offs, and request flows, see:
 * [`docs/architecture.md`](docs/architecture.md)
 * [`docs/decisions/ADR-001-initial-architecture.md`](docs/decisions/ADR-001-initial-architecture.md)
+* [`docs/decisions/ADR-002-single-agency-architecture.md`](docs/decisions/ADR-002-single-agency-architecture.md)
+* [`docs/decisions/ADR-003-financial-rules-and-risk-classification.md`](docs/decisions/ADR-003-financial-rules-and-risk-classification.md)
 
 ---
 
@@ -159,7 +181,8 @@ marginwatch/
 │   ├── development-roadmap.md     # 10-phase milestone roadmap from Phase 0 to Phase 9
 │   └── decisions/
 │       ├── ADR-001-initial-architecture.md # Stack decisions, trade-offs, and rationale
-│       └── ADR-002-financial-rules-and-risk-classification.md # Financial rules, missing estimates, and precedence
+│       ├── ADR-002-single-agency-architecture.md # Single-agency architecture constraint and rationale
+│       └── ADR-003-financial-rules-and-risk-classification.md # Financial rules, missing estimates, and precedence
 ├── backend/                       # Django backend directory (initialized in Phase 1)
 │   └── .gitkeep
 └── frontend/                      # Next.js frontend directory (initialized in Phase 1)
@@ -234,6 +257,7 @@ npm run dev
 
 ## 13. Known Limitations (MVP Scope)
 
+* **Single-Agency Scope:** MarginWatch is intentionally architected for a single agency without multi-tenant agency models or tenant-switching abstractions. Multi-tenant agency accounts are explicitly out of scope for this assessment MVP.
 * **Single Currency per Project:** Projects operate in a single configured currency; multi-currency dynamic conversions are planned for v1.1+.
 * **Manual Time Logging:** The MVP focuses on manual date and hours logging rather than automated desktop/mobile timer widgets.
 * **Advisory AI:** The AI Risk Advisor provides operational advice and summaries; it intentionally does not perform autonomous actions or automated budget adjustments.

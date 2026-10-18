@@ -1,9 +1,9 @@
-# ADR-002: Financial Business Rules, Missing Estimate Policy, and Risk Precedence
+# ADR-003: Financial Business Rules, Missing Estimate Policy, and Risk Precedence
 
 **Status:** Accepted (Formal Financial Specification — Phase 0)  
 **Date:** October 2026  
 **Deciders:** Lead Architect, Financial Domain Specialist, Full-Stack Developer  
-**Related Documents:** [docs/financial-rules.md](../financial-rules.md), [docs/requirements.md](../requirements.md), [ADR-001](ADR-001-initial-architecture.md)
+**Related Documents:** [docs/financial-rules.md](../financial-rules.md), [docs/requirements.md](../requirements.md), [ADR-001](ADR-001-initial-architecture.md), [ADR-002](ADR-002-single-agency-architecture.md)
 
 ---
 

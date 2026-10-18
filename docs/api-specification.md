@@ -1,12 +1,13 @@
 # MarginWatch — REST API Specification (Contract Blueprint)
 
-**Document Status:** Planned API Specification — Not Yet Implemented (Phase 0)  
+**Document Status:** Planned API Specification — Target Contract (Phase 0)  
 **Last Updated:** October 2026  
 **Audience:** Frontend Developers, Backend Developers, API Integration Testers  
-**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-002](decisions/ADR-002-financial-rules-and-risk-classification.md)
+**Architecture Authority:** [ADR-001: Initial Architecture](decisions/ADR-001-initial-architecture.md) | [ADR-002: Single-Agency Architecture](decisions/ADR-002-single-agency-architecture.md)  
+**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-003: Financial Rules](decisions/ADR-003-financial-rules-and-risk-classification.md)
 
 > [!IMPORTANT]
-> This document specifies the planned REST API contract for MarginWatch. These endpoints represent target behaviors and response schemas for Phase 4 implementation and do not exist in the codebase at this stage.
+> This document specifies the planned REST API contract for MarginWatch under the **Single-Agency Architecture**. The application serves one agency implicitly; no agency IDs or tenant context headers are accepted.
 
 ---
 
@@ -18,13 +19,13 @@
 - **Content Type:** `application/json; charset=utf-8` for all request bodies and responses.
 
 ### 1.2 Authentication Headers
-Protected endpoints require an `Authorization` header containing a valid token:
+Protected endpoints require a valid JWT access token:
 ```http
 Authorization: Bearer <access_token>
 ```
 
-### 1.3 Standard Success Envelope
-Collection endpoints return a standard paginated response envelope:
+### 1.3 Standard Success & Pagination Envelope
+Collection endpoints return a standard paginated response:
 ```json
 {
   "count": 42,
@@ -36,16 +37,16 @@ Collection endpoints return a standard paginated response envelope:
 ```
 
 ### 1.4 Standard Error Response Schema
-All error responses return an HTTP 4xx or 5xx status code with a consistent error structure:
+All error responses return an HTTP 4xx or 5xx status code with a uniform error envelope:
 ```json
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "The request body failed schema validation.",
+    "message": "The submitted payload contains one or more invalid attributes.",
     "details": [
       {
-        "field": "hours_worked",
-        "issue": "Hours worked must be greater than 0.00."
+        "field": "recorded_hours",
+        "issue": "Recorded hours must be greater than 0.00 and less than or equal to 24.00."
       }
     ]
   }
@@ -58,8 +59,9 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 
 ### 2.1 User Login
 - **Endpoint:** `POST /api/v1/auth/login/`
-- **Purpose:** Authenticate user credentials and issue an access token.
-- **Access Control:** Public (Unauthenticated).
+- **Authentication:** Public (Unauthenticated).
+- **Permitted Roles:** Any active user.
+- **Financial Information Exposed:** None.
 - **Request Body:**
   ```json
   {
@@ -70,36 +72,68 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 - **Success Response:** `200 OK`
   ```json
   {
-    "access_token": "jwt-token-string",
-    "refresh_token": "jwt-refresh-string",
+    "access_token": "<jwt_access_token>",
+    "refresh_token": "<jwt_refresh_token>",
     "user": {
-      "id": "u-101",
+      "id": "846f1178-716b-4d9e-ba32-c7a64b17bd5e",
       "email": "manager@agency.com",
       "first_name": "Sarah",
       "last_name": "Connor",
-      "role": "AGENCY_MANAGER"
+      "role": "MANAGER"
     }
   }
   ```
 - **Error Responses:**
   - `400 Bad Request`: Missing email or password.
-  - `401 Unauthorized`: Invalid credentials or account deactivated.
+  - `401 Unauthorized`: Invalid credentials, inactive account (`is_active = False`), or wrong password.
 
-### 2.2 Current User Profile (`Me`)
-- **Endpoint:** `GET /api/v1/auth/me/`
-- **Purpose:** Retrieve the profile of the currently authenticated user.
-- **Access Control:** Authenticated (`AGENCY_MANAGER` or `TEAM_MEMBER`).
+### 2.2 Token Refresh
+- **Endpoint:** `POST /api/v1/auth/refresh/`
+- **Authentication:** Public.
+- **Request Body:**
+  ```json
+  {
+    "refresh": "<jwt_refresh_token>"
+  }
+  ```
 - **Success Response:** `200 OK`
   ```json
   {
-    "id": "u-101",
+    "access_token": "<new_jwt_access_token>",
+    "refresh_token": "<rotated_jwt_refresh_token>"
+  }
+  ```
+
+### 2.3 Current User Profile (`Me`)
+- **Endpoint:** `GET /api/v1/auth/me/`
+- **Authentication:** Authenticated.
+- **Permitted Roles:** `MANAGER`, `TEAM_MEMBER`.
+- **Financial Information Exposed:** `default_hourly_cost_rate` is exposed **strictly to `MANAGER` users** and masked for `TEAM_MEMBER`.
+- **Manager Response (`200 OK`):**
+  ```json
+  {
+    "id": "846f1178-716b-4d9e-ba32-c7a64b17bd5e",
+    "email": "manager@agency.com",
+    "first_name": "Sarah",
+    "last_name": "Connor",
+    "role": "MANAGER",
+    "default_hourly_cost_rate": "125.0000",
+    "created_at": "2026-10-17T16:19:19Z",
+    "updated_at": "2026-10-17T16:19:21Z"
+  }
+  ```
+- **Team Member Response (`200 OK`):**
+  ```json
+  {
+    "id": "171ec3b3-48b8-44b9-9381-a98b6fdbd92f",
     "email": "dev@agency.com",
     "first_name": "Alex",
     "last_name": "Mercer",
-    "role": "TEAM_MEMBER"
+    "role": "TEAM_MEMBER",
+    "created_at": "2026-10-17T16:19:21Z",
+    "updated_at": "2026-10-17T16:19:26Z"
   }
   ```
-  *(Note: `default_hourly_cost_rate` is only exposed if `role == 'AGENCY_MANAGER'`).*
 
 ---
 
@@ -107,62 +141,116 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 
 | Method | Endpoint | Allowed Roles | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/v1/clients/` | `AGENCY_MANAGER` | List all clients (supports `?search=` and `?status=`). |
-| `POST` | `/api/v1/clients/` | `AGENCY_MANAGER` | Create a new client. |
-| `GET` | `/api/v1/clients/{id}/` | `AGENCY_MANAGER` | Retrieve client details and associated projects. |
-| `PUT` | `/api/v1/clients/{id}/` | `AGENCY_MANAGER` | Update client information. |
-| `DELETE`| `/api/v1/clients/{id}/` | `AGENCY_MANAGER` | Archive client (restricted if active projects exist). |
+| `GET` | `/api/v1/clients/` | `MANAGER` | List clients (`?search=`, `?is_archived=`). Paginated. |
+| `POST` | `/api/v1/clients/` | `MANAGER` | Create a client record. |
+| `GET` | `/api/v1/clients/{id}/` | `MANAGER` | Retrieve client details and linked projects. |
+| `PUT` | `/api/v1/clients/{id}/` | `MANAGER` | Update client information. |
+| `DELETE`| `/api/v1/clients/{id}/` | `MANAGER` | Soft-archive client (`is_archived = True`). Rejects physical deletion if active projects exist. |
 
 ### Create Client Request Body (`POST /api/v1/clients/`)
 ```json
 {
-  "name": "Acme Corp",
-  "contact_email": "billing@acme.com",
+  "name": "Acme Corporation",
   "contact_name": "Jane Doe",
-  "status": "ACTIVE"
+  "contact_email": "jane@acme.com",
+  "contact_phone": "+1-555-0199",
+  "notes": "Key enterprise customer. Monthly invoicing cycle."
 }
 ```
 
 ---
 
-## 4. Project Management Endpoints
+## 4. Project Management & Assignment Endpoints
 
 ### 4.1 List Projects
 - **Endpoint:** `GET /api/v1/projects/`
-- **Allowed Roles:**
-  - `AGENCY_MANAGER`: Sees all agency projects.
-  - `TEAM_MEMBER`: Filtered automatically to only projects where the member has an active `ProjectMembership`.
-- **Query Parameters:** `?status=ACTIVE&client_id={id}&page=1`
-- **Success Response:** `200 OK` (Manager View includes financial baselines; Team Member View excludes budgets and revenues).
+- **Authentication:** Authenticated.
+- **Allowed Roles & Queryset Filtering:**
+  - `MANAGER`: Sees all agency projects. Can filter by `?client_id=`, `?status=`, `?is_archived=`.
+  - `TEAM_MEMBER`: Automatically filtered by backend queryset to only projects where the user holds an active `ProjectAssignment` (`is_active = True`).
+- **Financial Information Exposed:**
+  - `MANAGER`: Full financial baselines (`contract_revenue`, `planned_cost_budget`, `planned_hourly_cost_rate`).
+  - `TEAM_MEMBER`: Financial attributes are **strictly masked** and omitted.
+- **Manager Response Item:**
+  ```json
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "client": {
+      "id": "e2a3c749-d7b1-4f10-90c7-bfef09d8be8a",
+      "name": "Acme Corporation"
+    },
+    "name": "Customer Portal Redesign",
+    "description": "Modern full-stack client portal.",
+    "contract_revenue": "45000.00",
+    "planned_cost_budget": "28000.00",
+    "planned_hourly_cost_rate": "75.0000",
+    "currency": "USD",
+    "estimated_remaining_hours": "140.00",
+    "expected_remaining_expenses": "0.00",
+    "status": "ACTIVE",
+    "is_archived": false,
+    "created_at": "2026-10-18T10:00:00Z"
+  }
+  ```
+- **Team Member Response Item (Masked):**
+  ```json
+  {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "client": {
+      "id": "e2a3c749-d7b1-4f10-90c7-bfef09d8be8a",
+      "name": "Acme Corporation"
+    },
+    "name": "Customer Portal Redesign",
+    "description": "Modern full-stack client portal.",
+    "currency": "USD",
+    "status": "ACTIVE",
+    "is_archived": false,
+    "created_at": "2026-10-18T10:00:00Z"
+  }
+  ```
 
 ### 4.2 Create Project
 - **Endpoint:** `POST /api/v1/projects/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
+- **Allowed Roles:** `MANAGER` strictly.
 - **Request Body:**
   ```json
   {
-    "client_id": "c-501",
+    "client_id": "e2a3c749-d7b1-4f10-90c7-bfef09d8be8a",
     "name": "Customer Portal Redesign",
-    "code": "PRJ-CP",
+    "description": "Full-stack client portal.",
     "contract_revenue": "45000.00",
     "planned_cost_budget": "28000.00",
-    "currency": "USD",
     "planned_hourly_cost_rate": "75.0000",
+    "currency": "USD",
     "estimated_remaining_hours": "140.00",
     "expected_remaining_expenses": "0.00",
-    "assigned_user_ids": ["u-101", "u-102"]
+    "status": "ACTIVE"
   }
   ```
-  *(Note: `estimated_remaining_hours` is nullable; omit or pass `null` if unknown).*
-- **Success Response:** `201 Created`
-- **Error Responses:**
-  - `400 Bad Request`: Negative numbers, duplicate `code`, or non-existent `client_id`.
-  - `403 Forbidden`: Attempted by `TEAM_MEMBER`.
+  *(Note: `estimated_remaining_hours` may be omitted or passed as `null` if remaining effort is unknown).*
 
-### 4.3 Update Project Baselines & Estimates
+### 4.3 Update Project Baselines & Scope Estimates
 - **Endpoint:** `PUT /api/v1/projects/{id}/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
-- **Purpose:** Update scope estimates (`estimated_remaining_hours`, `expected_remaining_expenses`) and budgets as delivery progresses. Passing `"estimated_remaining_hours": null` explicitly marks the estimate as unknown.
+- **Allowed Roles:** `MANAGER` strictly.
+- **Purpose:** Update budgets, contract revenue, or scope estimates (`estimated_remaining_hours`). Passing `"estimated_remaining_hours": null` explicitly marks the estimate as unknown.
+
+### 4.4 Project Assignments Endpoints
+
+| Method | Endpoint | Allowed Roles | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/projects/{project_id}/assignments/` | `MANAGER` | List all assigned users for the project. |
+| `POST` | `/api/v1/projects/{project_id}/assignments/` | `MANAGER` | Assign an active user to the project. |
+| `DELETE`| `/api/v1/projects/{project_id}/assignments/{id}/` | `MANAGER` | Revoke a user's assignment (`is_active = False`). |
+
+#### Assign User Request Body (`POST /api/v1/projects/{project_id}/assignments/`)
+```json
+{
+  "user_id": "171ec3b3-48b8-44b9-9381-a98b6fdbd92f"
+}
+```
+- **Validation:**
+  - `user_id` must reference an active user (`is_active = True`).
+  - Duplicate assignments of the same user to the same project are rejected with `400 Bad Request` (`duplicate_assignment`).
 
 ---
 
@@ -171,52 +259,37 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 ### 5.1 List Time Entries
 - **Endpoint:** `GET /api/v1/time-entries/`
 - **Allowed Roles:**
-  - `AGENCY_MANAGER`: Can view and filter entries across any project and any user (`?project_id=&user_id=&date_from=&date_to=`).
-  - `TEAM_MEMBER`: Strictly scoped to their own time entries.
-- **Success Response:** `200 OK`
-  ```json
-  {
-    "count": 1,
-    "results": [
-      {
-        "id": "te-201",
-        "project_id": "p-10",
-        "project_name": "Customer Portal Redesign",
-        "user_id": "u-102",
-        "user_name": "Alex Mercer",
-        "date": "2026-10-15",
-        "hours_worked": "6.50",
-        "description": "Implemented dashboard metrics widgets",
-        "created_at": "2026-10-15T17:30:00Z"
-      }
-    ]
-  }
-  ```
-  *(Note: `cost_rate_snapshot` is omitted from team member responses).*
+  - `MANAGER`: Can view all entries across any project and filter by `?project_id=`, `?user_id=`, `?date_from=`, `?date_to=`.
+  - `TEAM_MEMBER`: Strictly scoped to their own recorded time entries.
+- **Financial Masking:** `hourly_cost_snapshot` is visible only to `MANAGER` and completely omitted from `TEAM_MEMBER` responses.
 
 ### 5.2 Log Time Entry
 - **Endpoint:** `POST /api/v1/time-entries/`
-- **Allowed Roles:** Authenticated (`AGENCY_MANAGER` or assigned `TEAM_MEMBER`).
+- **Authentication:** Authenticated.
+- **Allowed Roles:** `MANAGER`, or `TEAM_MEMBER` holding an active `ProjectAssignment` on the target project.
 - **Request Body:**
   ```json
   {
-    "project_id": "p-10",
-    "date": "2026-10-17",
-    "hours_worked": "4.25",
-    "description": "API contract review and financial formulas documentation"
+    "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "work_date": "2026-10-18",
+    "recorded_hours": "4.50",
+    "description": "Implemented JWT authentication and serializer data masking"
   }
   ```
-- **Backend Behavior:** The server injects `request.user.id` and looks up their current `default_hourly_cost_rate` to persist `cost_rate_snapshot`.
-- **Success Response:** `201 Created`
-- **Error Responses:**
-  - `400 Bad Request`: `hours_worked <= 0.0` or `hours_worked > 24.0`, or future date beyond limit.
+- **Backend Behavior:**
+  1. Verifies that `request.user` holds an active `ProjectAssignment` for `project_id` (unless `request.user.role == 'MANAGER'`).
+  2. Sets `user = request.user`.
+  3. Captures `hourly_cost_snapshot = request.user.default_hourly_cost_rate`.
+- **Validation Errors:**
+  - `400 Bad Request`: `recorded_hours <= 0.00` or `> 24.00`.
   - `403 Forbidden`: User is not assigned to the specified project.
 
 ### 5.3 Edit / Delete Time Entry
 - **Endpoint:** `PUT /api/v1/time-entries/{id}/` / `DELETE /api/v1/time-entries/{id}/`
 - **Allowed Roles:**
-  - `AGENCY_MANAGER`: Permitted across all entries.
-  - `TEAM_MEMBER`: Permitted only for their own unbilled entries.
+  - `MANAGER`: Allowed for any entry.
+  - `TEAM_MEMBER`: Permitted strictly for their own entries (`entry.user_id == request.user.id`).
+- **Rule:** `hourly_cost_snapshot` is immutable and cannot be updated.
 
 ---
 
@@ -224,48 +297,40 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 
 ### 6.1 Submit Expense
 - **Endpoint:** `POST /api/v1/expenses/`
-- **Allowed Roles:** Authenticated user assigned to the project.
+- **Allowed Roles:** Authenticated user with an active `ProjectAssignment` on the target project.
 - **Request Body:**
   ```json
   {
-    "project_id": "p-10",
+    "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "category": "SOFTWARE_LICENSE",
     "amount": "149.00",
-    "description": "Monthly cloud staging server allocation",
-    "receipt_reference": "https://receipts.example.com/rec-8812.pdf"
+    "expense_date": "2026-10-18",
+    "description": "Staging server cloud database allocation"
   }
   ```
-- **Backend Behavior:** Initializes status to `PENDING`.
-- **Success Response:** `201 Created`
+- **Backend Behavior:** Status initializes to `PENDING`. `amount` must be $> 0.00$.
 
-### 6.2 Approve Expense
-- **Endpoint:** `POST /api/v1/expenses/{id}/approve/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
-- **Request Body:** None (or optional approval note).
-- **Success Response:** `200 OK`
+### 6.2 Review Expense (Approve or Reject)
+- **Endpoint:** `POST /api/v1/expenses/{id}/review/`
+- **Allowed Roles:** `MANAGER` strictly.
+- **Request Body (Approval):**
   ```json
   {
-    "id": "exp-301",
-    "status": "APPROVED",
-    "approved_by": "Sarah Connor",
-    "approved_at": "2026-10-17T14:10:00Z"
+    "action": "APPROVE",
+    "review_note": "Approved per project staging budget."
   }
   ```
-- **Error Responses:**
-  - `403 Forbidden`: Called by a `TEAM_MEMBER`.
-  - `422 Unprocessable Entity`: Expense is already `APPROVED` or was previously `REJECTED`.
-
-### 6.3 Reject Expense
-- **Endpoint:** `POST /api/v1/expenses/{id}/reject/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
-- **Request Body:**
+- **Request Body (Rejection):**
   ```json
   {
-    "rejection_reason": "Out-of-scope personal peripheral purchase."
+    "action": "REJECT",
+    "review_note": "Personal peripheral purchase outside contracted scope."
   }
   ```
-- **Validation Rule:** `rejection_reason` is mandatory and cannot be empty.
-- **Success Response:** `200 OK`
+- **Validation Rules:**
+  - `action` must be `APPROVE` or `REJECT`.
+  - If `action == "REJECT"`, `review_note` is mandatory and cannot be empty.
+  - An expense already in `APPROVED` or `REJECTED` state cannot be re-reviewed (`422 Unprocessable Entity`).
 
 ---
 
@@ -273,118 +338,101 @@ All error responses return an HTTP 4xx or 5xx status code with a consistent erro
 
 ### 7.1 Agency Dashboard Summary
 - **Endpoint:** `GET /api/v1/dashboard/summary/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
-- **Purpose:** Aggregate view across all active agency projects.
+- **Allowed Roles:** `MANAGER` strictly.
 - **Success Response:** `200 OK`
   ```json
   {
-    "active_projects_count": 8,
-    "total_contract_revenue": "320000.00",
-    "total_planned_cost_budget": "195000.00",
-    "total_actual_cost_to_date": "112450.00",
-    "projects_at_risk_count": 2,
+    "active_projects_count": 5,
+    "total_contract_revenue": "185000.00",
+    "total_planned_cost_budget": "115000.00",
+    "total_actual_cost_to_date": "64200.00",
+    "projects_at_risk_count": 1,
     "projects_over_budget_count": 1,
-    "pending_expenses_count": 5,
-    "pending_expenses_amount": "3450.00"
+    "pending_expenses_count": 3,
+    "pending_expenses_amount": "1450.00"
   }
   ```
 
 ### 7.2 Project Financial Summary
 - **Endpoint:** `GET /api/v1/projects/{id}/financial-summary/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
+- **Allowed Roles:** `MANAGER` strictly.
 - **Purpose:** Authoritative real-time calculation of project financials and deterministic risk classification.
 
-#### Case A: Complete Forecast Data Available
-When `estimated_remaining_hours` is valid (e.g., `140.00` hrs):
-- **Success Response:** `200 OK`
-  ```json
-  {
-    "project_id": "p-10",
-    "project_name": "Customer Portal Redesign",
-    "project_code": "PRJ-CP",
-    "currency": "USD",
-    "baselines": {
-      "contract_revenue": "45000.00",
-      "planned_cost_budget": "28000.00",
-      "planned_hourly_cost_rate": "75.0000",
-      "estimated_remaining_hours": "140.00",
-      "expected_remaining_expenses": "0.00"
-    },
-    "actuals": {
-      "total_hours_logged": "180.00",
-      "actual_labor_cost": "13500.00",
-      "approved_expense_cost": "2200.00",
-      "actual_total_cost": "15700.00",
-      "pending_expense_cost": "450.00",
-      "budget_consumption_percentage": "56.07"
-    },
-    "forecast": {
-      "forecast_available": true,
-      "estimated_remaining_labor_cost": "10500.00",
-      "projected_final_cost": "26200.00",
-      "projected_profit": "18800.00",
-      "projected_profit_margin_percentage": "41.78"
-    },
-    "risk": {
-      "status": "healthy",
-      "reasons": [
-        "Actual total cost ($15,700.00) is within planned budget ($28,000.00).",
-        "Projected final cost ($26,200.00) is within planned budget ($28,000.00).",
-        "Budget consumption is at 56.07% (below 80.0% warning threshold)."
-      ]
-    },
-    "assumptions_and_metadata": {
-      "expected_remaining_expenses_assumed_zero": true,
-      "warning_threshold_percentage": "80.0"
-    }
+#### Complete Forecast Data Scenario:
+```json
+{
+  "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "project_name": "Customer Portal Redesign",
+  "currency": "USD",
+  "baselines": {
+    "contract_revenue": "45000.00",
+    "planned_cost_budget": "28000.00",
+    "planned_hourly_cost_rate": "75.0000",
+    "estimated_remaining_hours": "140.00",
+    "expected_remaining_expenses": "0.00"
+  },
+  "actuals": {
+    "total_hours_logged": "180.00",
+    "actual_labor_cost": "13500.00",
+    "approved_expense_cost": "2200.00",
+    "actual_total_cost": "15700.00",
+    "pending_expense_cost": "450.00",
+    "budget_consumption_percentage": "56.07"
+  },
+  "forecast": {
+    "forecast_available": true,
+    "estimated_remaining_labor_cost": "10500.00",
+    "projected_final_cost": "26200.00",
+    "projected_profit": "18800.00",
+    "projected_profit_margin_percentage": "41.78"
+  },
+  "risk": {
+    "status": "healthy",
+    "reasons": [
+      "Actual total cost ($15,700.00) is within planned budget ($28,000.00).",
+      "Projected final cost ($26,200.00) is within planned budget ($28,000.00)."
+    ]
   }
-  ```
+}
+```
 
-#### Case B: Missing Remaining Hours Estimate (`null`)
-When `estimated_remaining_hours` is `null` and actual spending has not breached budget ($C_{actual} \le B$):
-- **Success Response:** `200 OK`
-  ```json
-  {
-    "project_id": "p-10",
-    "project_name": "Customer Portal Redesign",
-    "project_code": "PRJ-CP",
-    "currency": "USD",
-    "baselines": {
-      "contract_revenue": "45000.00",
-      "planned_cost_budget": "28000.00",
-      "planned_hourly_cost_rate": "75.0000",
-      "estimated_remaining_hours": null,
-      "expected_remaining_expenses": "0.00"
-    },
-    "actuals": {
-      "total_hours_logged": "180.00",
-      "actual_labor_cost": "13500.00",
-      "approved_expense_cost": "2200.00",
-      "actual_total_cost": "15700.00",
-      "pending_expense_cost": "450.00",
-      "budget_consumption_percentage": "56.07"
-    },
-    "forecast": {
-      "forecast_available": false,
-      "estimated_remaining_labor_cost": null,
-      "projected_final_cost": null,
-      "projected_profit": null,
-      "projected_profit_margin_percentage": null,
-      "reason_unavailable": "Estimated remaining hours is null (unknown). Forward-looking projections are unavailable."
-    },
-    "risk": {
-      "status": "insufficient_data",
-      "reasons": [
-        "Actual spending ($15,700.00) has not exceeded budget ($28,000.00).",
-        "Estimated remaining hours is unknown (null); reliable forecasting is impossible."
-      ]
-    },
-    "assumptions_and_metadata": {
-      "expected_remaining_expenses_assumed_zero": true,
-      "warning_threshold_percentage": "80.0"
-    }
+#### Missing Estimate Scenario (`estimated_remaining_hours = null`):
+```json
+{
+  "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "project_name": "Customer Portal Redesign",
+  "currency": "USD",
+  "baselines": {
+    "contract_revenue": "45000.00",
+    "planned_cost_budget": "28000.00",
+    "planned_hourly_cost_rate": "75.0000",
+    "estimated_remaining_hours": null,
+    "expected_remaining_expenses": "0.00"
+  },
+  "actuals": {
+    "total_hours_logged": "180.00",
+    "actual_labor_cost": "13500.00",
+    "approved_expense_cost": "2200.00",
+    "actual_total_cost": "15700.00",
+    "budget_consumption_percentage": "56.07"
+  },
+  "forecast": {
+    "forecast_available": false,
+    "estimated_remaining_labor_cost": null,
+    "projected_final_cost": null,
+    "projected_profit": null,
+    "projected_profit_margin_percentage": null,
+    "reason_unavailable": "Estimated remaining hours is null (unknown). Forward projections are suppressed."
+  },
+  "risk": {
+    "status": "insufficient_data",
+    "reasons": [
+      "Actual spending has not breached budget ceiling.",
+      "Estimated remaining hours is unknown; reliable completion forecast cannot be established."
+    ]
   }
-  ```
+}
+```
 
 ---
 
@@ -392,38 +440,35 @@ When `estimated_remaining_hours` is `null` and actual spending has not breached 
 
 ### 8.1 Request AI Risk Analysis
 - **Endpoint:** `POST /api/v1/projects/{id}/ai-risk-analysis/`
-- **Allowed Roles:** `AGENCY_MANAGER` strictly.
-- **Purpose:** Invoke Google Gemini server-side to generate plain-language risk explanations and actionable mitigation steps grounded strictly in calculated metrics.
-- **Request Body:** Optional configuration:
+- **Allowed Roles:** `MANAGER` strictly.
+- **Success Response (`200 OK`):**
   ```json
   {
-    "focus_area": "BUDGET_RECOVERY"
-  }
-  ```
-- **Success Response:** `200 OK`
-  ```json
-  {
-    "project_id": "p-10",
+    "project_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
     "deterministic_status": "at_risk",
     "ai_advisor": {
-      "executive_summary": "Project PRJ-CP is currently at risk of exceeding its planned delivery budget by $1,800.00 despite currently having consumed only 60% of funds.",
+      "executive_summary": "Project Customer Portal Redesign is at risk of exceeding its planned delivery budget by $1,800.00.",
       "primary_risk_drivers": [
-        "Remaining work (140 hours) at $75/hr will require $10,500.00 in labor, pushing projected costs over the $28,000.00 ceiling.",
-        "Unapproved expenses of $450.00 are currently in review; if approved, overrun will increase to $2,250.00."
+        "Remaining labor (140 hours at $75/hr = $10,500.00) pushes projected costs to $29,800.00 vs $28,000.00 ceiling.",
+        "Pending expenses of $450.00 in review could increase overrun to $2,250.00."
       ],
       "actionable_recommendations": [
-        "Conduct a scope reduction triage for the remaining 140 hours to identify non-critical tasks.",
-        "Reassign remaining front-end QA tasks to a lower-cost tier resource where appropriate.",
-        "Negotiate an addendum for scope change with client Acme Corp to expand contract revenue."
+        "Review remaining 140 hours scope for potential reduction of non-essential features.",
+        "Rebalance frontend development hours to a lower-rate team member.",
+        "Request client change order to adjust contract revenue."
       ],
       "data_gaps_and_assumptions": [
-        "Assuming remaining hours estimate of 140 hrs was updated within the last 7 calendar days.",
-        "Assumes no further scope additions without change orders."
+        "Assumes remaining hours estimate was updated within the last 7 calendar days."
       ]
     },
-    "generated_at": "2026-10-17T14:15:22Z"
+    "generated_at": "2026-10-18T10:15:00Z"
   }
   ```
-- **Error Responses:**
-  - `403 Forbidden`: Team member attempting to access financial AI.
-  - `503 Service Unavailable`: Gemini API timeout or quota exceeded (accompanied by standard fallback message).
+
+---
+
+## 9. Unresolved API Contract Decisions
+
+The following contract decisions are explicitly flagged for stakeholder alignment:
+1. **Time Entry Monthly Lockout:** Should the API reject time logging for dates in calendar months that a Manager has marked "billed"? (Targeted for post-MVP).
+2. **Team Member Expense Categories:** Should team members see all 5 expense categories, or should categories like `SUBCONTRACTOR` be restricted to Managers? (Currently open to all submitters).

@@ -20,7 +20,7 @@ The **AI Risk Advisor** is an intelligent analytical layer integrated into Margi
 
 ## 2. Input Payload & Context Sanitization
 
-When an Agency Manager requests an AI risk analysis (`POST /api/v1/projects/{id}/ai-risk-analysis/`), the backend compiles an anonymized, structured context payload.
+When a Manager (`MANAGER` role) requests an AI risk analysis (`POST /api/v1/projects/{id}/ai-risk-analysis/`), the backend compiles an anonymized, structured context payload.
 
 ### Context Sanitization Protocol (Privacy & Data Minimization)
 - **Included:** Project code, project status, contract revenue, planned cost budget, currency, total hours logged, actual labor cost, approved expenses total, pending expenses count and sum, estimated remaining hours, projected final cost, projected profit, budget consumption %, deterministic risk status, and deterministic status rationale.
@@ -164,5 +164,5 @@ Prior to releasing the AI feature in Phase 7, the AI Risk Advisor will be evalua
 ## 7. Known Limitations
 
 - **No Predictive ML:** The AI does not predict future timesheet velocity using time-series forecasting. It synthesizes and explains the explicit estimates provided by human managers.
-- **Dependency on Estimate Quality:** If an agency manager enters unrealistic remaining hours (e.g., claiming 10 hours remain when 100 are needed), the AI advice will reflect that distorted reality, noting it as an unverified assumption.
+- **Dependency on Estimate Quality:** If a manager enters unrealistic remaining hours (e.g., claiming 10 hours remain when 100 are needed), the AI advice will reflect that distorted reality, noting it as an unverified assumption.
 - **Language Coverage:** Initial prompt templates and validation schemas are designed and tested for English language outputs.
