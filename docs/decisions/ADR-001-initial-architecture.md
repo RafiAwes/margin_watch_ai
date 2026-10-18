@@ -61,7 +61,7 @@ We have decided on the following initial architecture:
 * **Alternative Considered:** Autonomous AI agents capable of altering project budgets, sending emails to clients, or automatically approving timesheets/expenses.
 * **Why Advisory AI was chosen:**
   - *Risk Containment:* Autonomous agent actions introduce significant operational risks (e.g., unintended budget reductions, accidental expense approvals, exposure of sensitive rate negotiations).
-  - *Human-in-the-Loop:* MarginWatch uses AI to reduce cognitive load—explaining *why* a project is at risk and suggesting actionable mitigations—while leaving final operational decisions firmly in the hands of the Agency Manager.
+  - *Human-in-the-Loop:* MarginWatch uses AI to reduce cognitive load—explaining *why* a project is at risk and suggesting actionable mitigations—while leaving final operational decisions firmly in the hands of the Manager.
   - *Reliability:* If the external AI service experiences a network outage, quota limit, or latency spike, the core application continues to deliver full financial monitoring without degradation.
 
 ---

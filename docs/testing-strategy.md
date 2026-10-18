@@ -1,132 +1,138 @@
 # MarginWatch — Comprehensive Testing Strategy & Test Scenarios
 
-**Document Status:** Test Strategy Blueprint — Planned Tests (Phase 0)  
+**Document Status:** Test Strategy Blueprint & Verification Log  
 **Last Updated:** October 2026  
 **Audience:** QA Engineers, Backend Engineers, Frontend Developers  
-**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-002](decisions/ADR-002-financial-rules-and-risk-classification.md)
-
-> [!NOTE]
-> This document defines the testing strategy, test pyramid, and high-priority scenario matrix for MarginWatch. All test cases documented herein are planned specifications to be implemented during Phases 3 through 8. No tests have been executed at this stage, as application code has not yet been implemented.
+**Architecture Authority:** [ADR-001: Initial Architecture](decisions/ADR-001-initial-architecture.md) | [ADR-002: Single-Agency Architecture](decisions/ADR-002-single-agency-architecture.md)  
+**Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-003: Financial Rules](decisions/ADR-003-financial-rules-and-risk-classification.md)
 
 ---
 
 ## 1. Testing Philosophy & Test Pyramid
 
-Financial watchdog systems require zero tolerance for calculation errors and security breaches. MarginWatch implements a **bottom-heavy test pyramid**, focusing heavily on pure mathematical unit tests using Python 3.15 and server-side authorization boundaries.
+MarginWatch enforces zero tolerance for financial calculation inaccuracies and data leakage. The testing strategy follows a **bottom-heavy test pyramid**, focusing heavily on deterministic unit tests using Python 3.15 and strict server-side authorization boundaries.
 
 ```
        /\
-      /  \      Frontend Workflow Tests (Playwright / Integration)
+      /  \      Frontend Workflow Tests (Playwright / Integration - Planned Phase 6)
      /----\     - Key user journeys, login, forms, state transitions
     /      \
-   /--------\   API & Integration Tests (DRF APITestCase)
+   /--------\   API & Integration Tests (DRF APITestCase - Executed & Planned)
   /          \  - Auth, RBAC, OLAC, expense state machine, AI fallback
  /------------\
-/ Pure Unit    \ Unit Tests (Pure Python 3.15 / Decimal Services)
+/ Pure Unit    \ Unit Tests (Pure Python 3.15 / Decimal Services - Planned Phase 5)
 / Tests         \ - Financial formulas, boundary values, zero divisions, rounding
 -----------------
 ```
 
 ### Core Testing Pillars
-1. **Financial Rule Isolation:** The financial calculation engine is built as pure, side-effect-free Python functions (`backend/finance/services.py`). It is verified with isolated unit tests independent of database setup or HTTP mocking.
-2. **Deterministic Verification:** Every financial test asserts exact penny matches using `Decimal('XX.XX')`. Floating-point assertions (`assertAlmostEqual`) are prohibited.
-3. **Security Boundary Coverage:** Every endpoint is tested against both positive and negative authorization cases (unauthenticated, wrong role, cross-tenant/cross-user IDOR attempts).
-4. **Resilient AI Simulation:** External AI provider dependencies (Google Gemini) are always mocked in automated test suites to simulate timeouts, rate limits, and malformed outputs without incurring API costs or network flakiness.
+1. **Single-Agency Security Isolation:** Tests verify that the single agency's records are protected through role-based access (`MANAGER` vs `TEAM_MEMBER`), object-level access control (`ProjectAssignment`), and serializer field masking.
+2. **Deterministic Verification:** Every financial test asserts exact penny matches using `Decimal('XX.XX')`. Binary floating-point assertions (`assertAlmostEqual`) are prohibited.
+3. **Execution Status Clarity:** This document explicitly distinguishes between **executed test suites** (verified against live database) and **planned test suites** (formal specifications for future development phases).
 
 ---
 
-## 2. Test Types & Scope
+## 2. Execution Status Log: Executed vs. Planned
 
-### 2.1 Unit Tests (Financial Engine)
-- Validate all mathematical equations from [`docs/financial-rules.md`](financial-rules.md).
-- Test rounding behaviors (`ROUND_HALF_UP`) and precision preservation.
-- Verify precedence hierarchy:
-  1. `over_budget` ($C_{actual} > B$)
-  2. `insufficient_data` ($B \le 0$ or $H_{rem}$ is `null`)
-  3. `at_risk` ($C_{projected} > B$ or $P_{consumed} \ge 80.0\%$ with $H_{rem} > 0$)
-  4. `healthy` ($C_{actual} \le B$ and $C_{projected} \le B$)
-- Test boundary conditions: zero revenue, zero budget, zero hours, missing remaining estimates.
-
-### 2.2 API Validation & Constraint Tests
-- Verify serializer rejection of invalid inputs: negative hours, hours $> 24.0$, negative expenses, malformed emails.
-- Verify required field presence and clear error message formats.
-
-### 2.3 Authentication & Authorization Tests
-- Test access token issuance, token expiration, and invalid credential rejections.
-- Role-Based Access: Verify team members receive HTTP 403 when calling manager-only endpoints (project creation, budget changes, expense approvals, AI advisor).
-- Object-Level Access: Verify team members cannot query or modify time entries belonging to other users or log time to unassigned projects.
-
-### 2.4 Expense State Machine Tests
-- Verify new expenses start in `PENDING`.
-- Verify only managers can trigger `/approve/` and `/reject/`.
-- Verify rejecting an expense requires a non-empty `rejection_reason`.
-- Verify that `PENDING` and `REJECTED` expenses are mathematically excluded from `actual_expense_cost` and `actual_total_cost`.
-- Verify approved expenses cannot have their amount, category, or project mutated.
-
-### 2.5 AI Risk Advisor Integration & Fallback Tests
-- Test normal flow with mocked successful Gemini JSON response.
-- Test external timeout (simulating 10s socket timeout) $\rightarrow$ asserts HTTP 503 response and ensures deterministic financial metrics remain viewable.
-- Test external HTTP 429 (rate limit exceeded) $\rightarrow$ asserts graceful error message.
-- Test malformed or hallucinatory JSON from AI $\rightarrow$ asserts schema validation failure and safe fallback.
-
-### 2.6 Frontend Workflow Tests (Planned for Phase 6)
-- Test end-to-end user flows in Next.js:
-  - Manager logs in, views dashboard, inspects at-risk project, reviews and approves an expense, and sees immediate budget recalculation.
-  - Team member logs in, logs 4 hours to Project Alpha, verifies their logged hours, and confirms financial budgets are not visible.
+| Test Suite Category | Implementation Phase | Execution Status | Pass Rate | Test Runner Command |
+| :--- | :---: | :---: | :---: | :--- |
+| **Authentication & Profile Masking** | Phase 2 / Phase 3 | **EXECUTED** | **100% (8/8 Passed)** | `python manage.py test users --keepdb` |
+| **Model Validation & Integrity Constraints** | Phase 2 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_models` |
+| **Project Assignment & Revocation** | Phase 3 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_assignments` |
+| **Time Entry & Snapshot Immutability** | Phase 4 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_time_entries` |
+| **Expense State Machine & Approval** | Phase 4 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_expenses` |
+| **Financial Engine & Benchmark Scenarios** | Phase 5 | **PLANNED** | Not yet run | `python manage.py test finance.tests` |
+| **AI Risk Advisor Resilience & Fallback** | Phase 7 | **PLANNED** | Not yet run | `python manage.py test ai_advisor.tests` |
 
 ---
 
-## 3. Authoritative Numerical Benchmark Test Matrix
+## 3. Executed Test Suite: Authentication & User Governance
 
-The following test cases directly verify the 5 authoritative numerical benchmark scenarios defined in [`docs/financial-rules.md`](financial-rules.md).
+The following 8 test cases have been **fully executed and verified** in `backend/users/tests.py`:
 
-| Test ID | Scenario Name | Inputs | Expected Financial Calculations | Expected Risk Status | Priority |
+| Test ID | Category | Scenario / Input Condition | Verified Result | Status |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-AUTH-01** | Authentication | Valid Manager credentials (`POST /api/v1/auth/login/`) | HTTP 200 OK; access & refresh tokens issued; user metadata returned. | **PASSED** |
+| **TC-AUTH-02** | Authentication | Invalid password supplied | HTTP 401 Unauthorized returned. | **PASSED** |
+| **TC-AUTH-03** | Inactive User | Inactive account (`is_active = False`) attempts login | HTTP 401 Unauthorized; token issuance strictly blocked. | **PASSED** |
+| **TC-AUTH-04** | Token Rotation | Renew token via `POST /api/v1/auth/refresh/` using `refresh` or `refresh_token` | HTTP 200 OK; fresh access token issued. | **PASSED** |
+| **TC-AUTH-05** | Auth Guard | Unauthenticated request to `GET /api/v1/auth/me/` | HTTP 401 Unauthorized; protected endpoint guarded. | **PASSED** |
+| **TC-AUTH-06** | Data Visibility | Manager queries own profile (`GET /api/v1/auth/me/`) | HTTP 200 OK; `default_hourly_cost_rate` is visible ($125.0000). | **PASSED** |
+| **TC-AUTH-07** | Data Masking | Team Member queries own profile (`GET /api/v1/auth/me/`) | HTTP 200 OK; `default_hourly_cost_rate` is **strictly omitted**. | **PASSED** |
+| **TC-AUTH-08** | Usability | Case-insensitive email login (`MANAGER@AGENCY.COM`) | HTTP 200 OK; email normalized lowercase. | **PASSED** |
+
+---
+
+## 4. Planned Test Scenarios
+
+### 4.1 Model Validation & Database Constraints (Planned Phase 2)
+
+| Test ID | Scenario Description | Target Model | Expected Result | Priority |
+| :--- | :--- | :--- | :--- | :---: |
+| **TC-MOD-01** | Negative monetary amounts | `Project`, `Expense` | Rejection on save with `ValidationError` (`>= 0.00`). | **P0** |
+| **TC-MOD-02** | Zero or negative recorded hours | `TimeEntry` | Rejection on save with `ValidationError` (`recorded_hours > 0.00`). | **P0** |
+| **TC-MOD-03** | Excessive recorded hours (> 24.0) | `TimeEntry` | Rejection on save with `ValidationError` (`recorded_hours <= 24.00`). | **P1** |
+| **TC-MOD-04** | Null estimate representation | `Project` | `estimated_remaining_hours = None` persists as SQL `NULL`, not `0.00`. | **P0** |
+| **TC-MOD-05** | Duplicate project assignment | `ProjectAssignment` | DB integrity error on duplicate `(project_id, user_id)`. | **P0** |
+| **TC-MOD-06** | Orphan project creation | `Project` | FK constraint error if `client_id` is invalid or deleted. | **P0** |
+| **TC-MOD-07** | Cascade deletion protection | `Client` with projects | `models.ProtectedError` raised on attempt to delete client with active projects. | **P0** |
+| **TC-MOD-08** | Inactive user assigned to project | `ProjectAssignment` | Serializer validation error rejecting assignment of inactive user. | **P1** |
+
+### 4.2 Security, Permissions & Role Escalation Defense (Planned Phase 3)
+
+| Test ID | Scenario Description | Expected Result | Priority |
+| :--- | :--- | :--- | :---: |
+| **TC-SEC-01** | Team member attempts to create or update project | HTTP 403 Forbidden (`IsManagerUser` blocks). | **P0** |
+| **TC-SEC-02** | Team member attempts to self-elevate role via `PATCH /auth/me/` | HTTP 200 OK, but `role` attribute is ignored and remains `TEAM_MEMBER`. | **P0** |
+| **TC-SEC-03** | Team member queries project list `GET /api/v1/projects/` | Only assigned projects returned; financial baselines and margins masked. | **P0** |
+| **TC-SEC-04** | Team member attempts to log time to unassigned project | HTTP 403 Forbidden (`User not assigned to target project`). | **P0** |
+| **TC-SEC-05** | Team member attempts to update another member's time entry | HTTP 403 Forbidden or 404 Not Found (IDOR defense). | **P0** |
+| **TC-SEC-06** | Team member queries time entries `GET /api/v1/time-entries/` | Queryset filtered strictly to own entries; `hourly_cost_snapshot` omitted. | **P0** |
+| **TC-SEC-07** | Team member attempts to approve or reject an expense | HTTP 403 Forbidden. | **P0** |
+| **TC-SEC-08** | Team member attempts to trigger AI Risk Advisor | HTTP 403 Forbidden. | **P0** |
+| **TC-SEC-09** | Manager queries unassigned project | HTTP 200 OK; Managers hold global access across single agency. | **P1** |
+| **TC-SEC-10** | Assignment revocation effect | Revoking assignment immediately bars team member from future time/expense logs. | **P0** |
+
+### 4.3 Time Entry & Expense State Machine Tests (Planned Phase 4)
+
+| Test ID | Scenario Description | Expected Result | Priority |
+| :--- | :--- | :--- | :---: |
+| **TC-EXP-01** | New expense submission | Status initializes to `PENDING`. | **P0** |
+| **TC-EXP-02** | Manager approves expense | Status transitions to `APPROVED`; `reviewed_by` and `reviewed_at` populated. | **P0** |
+| **TC-EXP-03** | Manager rejects expense without note | Rejection with HTTP 400 Bad Request (`review_note is mandatory`). | **P0** |
+| **TC-EXP-04** | Manager rejects expense with valid note | Status transitions to `REJECTED`; `review_note` recorded. | **P0** |
+| **TC-EXP-05** | Modifying approved expense | Rejection with HTTP 422 Unprocessable Entity (amount & category immutable). | **P0** |
+| **TC-TIME-01**| Rate snapshot immutability | User profile rate modified from $65 to $90; historical time entry retains $65 snapshot. | **P0** |
+| **TC-TIME-02**| Planned project rate change | Project planned rate changed from $75 to $100; past time entry costs remain unchanged. | **P0** |
+
+### 4.4 Financial Calculations & Risk Precedence (Planned Phase 5)
+
+The 5 authoritative numerical benchmark scenarios from [`docs/financial-rules.md`](financial-rules.md):
+
+| Test ID | Scenario Name | Inputs | Expected Calculations | Expected Status | Priority |
 | :--- | :--- | :--- | :--- | :--- | :---: |
-| **TC-NUM-01** | Scenario 1: Healthy | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$2,000.00$<br>$H_{rem} = 40.0\text{ hrs}$<br>$C_{hourly} = \$50.00$<br>$E_{rem} = \$0.00$ | $P_{consumed} = 33.33\%$<br>$C_{rem\_labor} = \$2,000.00$<br>$C_{projected} = \$4,000.00$<br>$P_{profit} = \$6,000.00$<br>$M_{profit} = 60.00\%$ | `healthy` | **P0** |
-| **TC-NUM-02** | Scenario 2: Forecast Over Budget | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$4,000.00$<br>$H_{rem} = 50.0\text{ hrs}$<br>$C_{hourly} = \$50.00$<br>$E_{rem} = \$0.00$ | $P_{consumed} = 66.67\%$<br>$C_{rem\_labor} = \$2,500.00$<br>$C_{projected} = \$6,500.00$<br>$P_{profit} = \$3,500.00$<br>$M_{profit} = 35.00\%$ | `at_risk`<br>(Reason: $C_{projected} > B$ by $500.00) | **P0** |
-| **TC-NUM-03** | Scenario 3: Already Over Budget | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$6,200.00$<br>$H_{rem} = \text{null}$<br>$C_{hourly} = \$50.00$ | $P_{consumed} = 103.33\%$<br>$C_{rem\_labor} = \text{null}$<br>$C_{projected} = \text{null}$<br>$P_{profit} = \text{null}$<br>$M_{profit} = \text{null}$ | `over_budget`<br>(Rule 1 priority: takes precedence over missing $H_{rem}$) | **P0** |
-| **TC-NUM-04** | Scenario 4: Missing Estimate | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$2,000.00$<br>$H_{rem} = \text{null}$<br>$C_{hourly} = \$50.00$ | $P_{consumed} = 33.33\%$ (Valid)<br>$C_{rem\_labor} = \text{null}$<br>$C_{projected} = \text{null}$<br>$P_{profit} = \text{null}$<br>$M_{profit} = \text{null}$ | `insufficient_data`<br>(Rule 2: within budget but forecast unknown) | **P0** |
-| **TC-NUM-05** | Scenario 5: High Consumption Warning | $R = \$10,000.00$<br>$B = \$6,000.00$<br>$C_{actual} = \$4,900.00$<br>$H_{rem} = 10.0\text{ hrs}$<br>$C_{hourly} = \$50.00$<br>$E_{rem} = \$0.00$ | $P_{consumed} = 81.67\%$<br>$C_{rem\_labor} = \$500.00$<br>$C_{projected} = \$5,400.00$<br>$P_{profit} = \$4,600.00$<br>$M_{profit} = 46.00\%$ | `at_risk` (Warning heuristic on)<br>`healthy` (Warning heuristic off) | **P0** |
+| **TC-NUM-01** | Healthy Project | $R = \$10k, B = \$6k, C_{actual} = \$2k, H_{rem} = 40h, C_{hourly} = \$50$ | $P_{consumed} = 33.33\%, C_{projected} = \$4,000.00, P_{profit} = \$6,000.00$ | `healthy` | **P0** |
+| **TC-NUM-02** | Forecast Over Budget | $R = \$10k, B = \$6k, C_{actual} = \$4k, H_{rem} = 50h, C_{hourly} = \$50$ | $P_{consumed} = 66.67\%, C_{projected} = \$6,500.00, P_{profit} = \$3,500.00$ | `at_risk` | **P0** |
+| **TC-NUM-03** | Already Over Budget | $R = \$10k, B = \$6k, C_{actual} = \$6.2k, H_{rem} = \text{null}$ | $P_{consumed} = 103.33\%, C_{projected} = \text{null}, P_{profit} = \text{null}$ | `over_budget` (Rule 1 priority) | **P0** |
+| **TC-NUM-04** | Missing Estimate | $R = \$10k, B = \$6k, C_{actual} = \$2k, H_{rem} = \text{null}$ | $P_{consumed} = 33.33\%, C_{projected} = \text{null}, P_{profit} = \text{null}$ | `insufficient_data` (Rule 2) | **P0** |
+| **TC-NUM-05** | Consumption Warning | $R = \$10k, B = \$6k, C_{actual} = \$4.9k, H_{rem} = 10h, C_{hourly} = \$50$ | $P_{consumed} = 81.67\%, C_{projected} = \$5,400.00$ | `at_risk` (80% heuristic on) | **P0** |
+| **TC-NUM-06** | Zero Remaining Hours | $R = \$10k, B = \$6k, C_{actual} = \$4k, H_{rem} = 0.0$ | $C_{rem\_labor} = \$0.00, C_{projected} = \$4,000.00$ | `healthy` | **P0** |
+| **TC-NUM-07** | Zero Budget Edge Case | $B = 0.00$ | Division by zero prevented; returns explicit warning. | `insufficient_data` | **P0** |
+| **TC-NUM-08** | Approved vs Unapproved | $1,000 approved, $500 pending, $200 rejected | $C_{expense} = \$1,000.00$. Pending & rejected excluded from $C_{actual}$. | Reconciled | **P0** |
 
----
-
-## 4. Edge-Case & Boundary Value Test Matrix
-
-| Test ID | Category | Scenario / Input Condition | Expected Calculation / Behavior | Expected Risk Status | Priority |
-| :--- | :--- | :--- | :--- | :--- | :---: |
-| **TC-EDGE-01** | Boundary | Zero planned budget ($B = 0.00$) | $P_{consumed} = \text{null}$ (division by zero avoided). Warning returned. | `insufficient_data` | **P0** |
-| **TC-EDGE-02** | Boundary | Zero contract revenue ($R = 0.00$, $B = \$5,000.00$) | $P_{profit} = -\$C_{projected}$. $M_{profit} = \text{null}$ (division by zero avoided). | `healthy` / `at_risk` relative to $B$ | **P0** |
-| **TC-EDGE-03** | Boundary | Exactly 100% budget consumption ($C_{actual} = B = \$6,000.00$, $H_{rem} = 5.0$) | $P_{consumed} = 100.00\%$. $C_{projected} = \$6,250.00 > \$6,000.00$. | `at_risk` (forecast overrun) | **P0** |
-| **TC-EDGE-04** | Boundary | Exactly 100% budget consumption, 0 remaining hours ($C_{actual} = B = \$6,000.00$, $H_{rem} = 0.0$) | $P_{consumed} = 100.00\%$. $C_{projected} = \$6,000.00 \le \$6,000.00$. | `at_risk` (if 80% warning heuristic triggers on $\ge 80\%$); or `healthy` if heuristic requires $H_{rem} > 0$. | **P1** |
-| **TC-EDGE-05** | Validation | Negative hours worked ($H_{entry} = -3.5$) | API serializer rejects with HTTP 400 Bad Request. | N/A (Validation Error) | **P0** |
-| **TC-EDGE-06** | Validation | Excessive hours worked ($H_{entry} = 25.0$) | API serializer rejects with HTTP 400 ("Max 24 hrs/day"). | N/A (Validation Error) | **P1** |
-| **TC-EDGE-07** | Validation | Negative remaining hours ($H_{rem} = -10.0$) | API serializer rejects with HTTP 400 ("Remaining hours cannot be negative"). | N/A (Validation Error) | **P0** |
-| **TC-EDGE-08** | Snapshot | Member's cost rate changes after time entry logged | $C_{labor}$ continues using `cost_rate_snapshot` from time entry creation time; historical audit preserved. | Preserved | **P0** |
-| **TC-EDGE-09** | Segregation | Expenses in mixed states: $1,000 approved, $500 pending, $200 rejected | $C_{expense} = \$1,000.00$. Pending ($500) and rejected ($200) strictly excluded from $C_{actual}$. | Evaluated on $C_{actual} = C_{labor} + \$1,000$ | **P0** |
-| **TC-EDGE-10** | Forecast | Explicit zero remaining hours ($H_{rem} = 0.0$) | $C_{rem\_labor} = \$0.00$. $C_{projected} = C_{actual} + E_{rem}$. Project complete. | `healthy` (if $C_{actual} \le B$) | **P0** |
-| **TC-EDGE-11** | Forecast | Missing expected remaining expenses ($E_{rem} = \text{null}$) | Defaults to `$0.00` in MVP with explicit assumption metadata. | Evaluated normally | **P1** |
-
----
-
-## 5. Security & Access Control Test Matrix
+### 4.5 Demo Seed Repeatability & Reconciliation (Planned Phase 2 / Phase 5)
 
 | Test ID | Category | Scenario / Input Condition | Expected Result | Priority |
 | :--- | :--- | :--- | :--- | :---: |
-| **TC-SEC-01** | Authorization | Team member attempts to log time to unassigned project | Request rejected with HTTP 403 Forbidden. | **P0** |
-| **TC-SEC-02** | Authorization | Team member attempts to update another member's time entry | Request rejected with HTTP 403 Forbidden or 404 Not Found (IDOR defense). | **P0** |
-| **TC-SEC-03** | Data Masking | Team member queries project list `GET /api/v1/projects/` | Response excludes `contract_revenue`, `planned_cost_budget`, and profit margins. | **P0** |
-| **TC-SEC-04** | Data Masking | Team member queries time entries `GET /api/v1/time-entries/` | Response excludes `cost_rate_snapshot`. | **P0** |
-| **TC-SEC-05** | Authorization | Team member attempts to approve an expense | Request rejected with HTTP 403 Forbidden. | **P0** |
-| **TC-SEC-06** | Authorization | Team member attempts to trigger AI risk analysis | Request rejected with HTTP 403 Forbidden. | **P0** |
+| **TC-SEED-01**| Seed Idempotency | Execute `seed_demo_data` command twice consecutively | Second execution reports existing records without creating duplicates. | **P0** |
+| **TC-SEED-02**| Financial Reconciliation | Sum time entries and approved expenses in demo seed | Sum equals the reported project actual cost totals to the exact cent. | **P0** |
 
----
-
-## 6. AI Risk Advisor Resilience Test Matrix
+### 4.6 AI Risk Advisor Resilience (Planned Phase 7)
 
 | Test ID | Category | Scenario / Input Condition | Expected Result | Priority |
 | :--- | :--- | :--- | :--- | :---: |
-| **TC-AI-01** | AI Advisor | Mock Gemini API responds with valid structured JSON | HTTP 200 OK with parsed executive summary, drivers, and recommendations. | **P0** |
-| **TC-AI-02** | AI Advisor | Mock Gemini API times out after 10 seconds | HTTP 503 Service Unavailable with friendly fallback; financial summary remains intact. | **P0** |
-| **TC-AI-03** | AI Advisor | Mock Gemini API returns HTTP 429 Quota Exceeded | HTTP 503 Service Unavailable with quota notification. | **P1** |
-| **TC-AI-04** | AI Advisor | Mock Gemini API returns unparseable or schema-violating text | HTTP 502 Bad Gateway; server handles gracefully without crashing. | **P1** |
-| **TC-AI-05** | AI Guardrail | Verify AI response cannot execute database writes | Mocked AI suggests changing budget; verify database records remain unaltered. | **P0** |
+| **TC-AI-01** | AI Advisor | Mock Gemini API responds with valid structured JSON | HTTP 200 OK with parsed summary, drivers, and recommendations. | **P0** |
+| **TC-AI-02** | AI Advisor | Mock Gemini API times out after 10 seconds | HTTP 503 Service Unavailable; deterministic financial summary intact. | **P0** |
+| **TC-AI-03** | AI Advisor | Mock Gemini API returns HTTP 429 Quota Exceeded | HTTP 503 Service Unavailable with quota notice. | **P1** |
+| **TC-AI-04** | AI Advisor | Mock Gemini API returns malformed or non-JSON text | HTTP 502 Bad Gateway; server handles gracefully without crashing. | **P1** |
+| **TC-AI-05** | Guardrail | Verify AI response cannot execute database writes | Database records remain completely unaltered after AI invocation. | **P0** |
