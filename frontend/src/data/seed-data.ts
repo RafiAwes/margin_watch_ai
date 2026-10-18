@@ -118,7 +118,7 @@ export const INITIAL_PROJECTS: Project[] = [
     planned_cost_budget: 64000,
     planned_hourly_cost: 125,
     estimated_remaining_hours: 110, // 110 * 125 = $13,750 remaining -> triggers CRITICAL overrun
-    assigned_member_ids: ['usr_mgr_01', 'usr_dev_02', 'usr_dev_03'],
+    assigned_member_ids: ['usr_mgr_backend', 'usr_dev_backend', 'usr_mgr_01', 'usr_dev_02', 'usr_dev_03'],
     updated_at: '2026-10-17',
   },
   {
@@ -132,7 +132,7 @@ export const INITIAL_PROJECTS: Project[] = [
     planned_cost_budget: 52000,
     planned_hourly_cost: 120,
     estimated_remaining_hours: 65, // triggers WARNING (~90% consumed + slight forecast overrun)
-    assigned_member_ids: ['usr_mgr_01', 'usr_dev_02', 'usr_dev_04'],
+    assigned_member_ids: ['usr_mgr_backend', 'usr_dev_backend', 'usr_mgr_01', 'usr_dev_02', 'usr_dev_04'],
     updated_at: '2026-10-16',
   },
   {
@@ -146,7 +146,7 @@ export const INITIAL_PROJECTS: Project[] = [
     planned_cost_budget: 45000,
     planned_hourly_cost: 120,
     estimated_remaining_hours: null, // Explicit NULL: triggers INCOMPLETE_DATA ("Forecast Unavailable")
-    assigned_member_ids: ['usr_dev_02', 'usr_dev_03'],
+    assigned_member_ids: ['usr_dev_backend', 'usr_dev_02', 'usr_dev_03'],
     updated_at: '2026-10-15',
   },
   {
@@ -160,7 +160,7 @@ export const INITIAL_PROJECTS: Project[] = [
     planned_cost_budget: 36000,
     planned_hourly_cost: 115,
     estimated_remaining_hours: 90, // Healthy project
-    assigned_member_ids: ['usr_dev_02', 'usr_dev_03', 'usr_dev_04'],
+    assigned_member_ids: ['usr_dev_backend', 'usr_dev_02', 'usr_dev_03', 'usr_dev_04'],
     updated_at: '2026-10-17',
   },
   {

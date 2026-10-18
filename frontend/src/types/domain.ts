@@ -43,7 +43,7 @@ export interface User {
 }
 
 export interface StoredUserAccount extends User {
-  password: string;
+  password?: string;
 }
 
 export interface AuthSession {
