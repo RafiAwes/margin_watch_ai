@@ -7,14 +7,14 @@ class Command(BaseCommand):
     help = "Seed initial development users (Agency Manager and Team Member)"
 
     def handle(self, *args, **options):
-        # 1. Agency Manager
+        # 1. Manager
         manager_email = "manager@agency.com"
         manager, created = User.objects.get_or_create(
             email=manager_email,
             defaults={
                 "first_name": "Sarah",
                 "last_name": "Connor",
-                "role": UserRole.AGENCY_MANAGER,
+                "role": UserRole.MANAGER,
                 "default_hourly_cost_rate": Decimal("125.0000"),
                 "is_staff": True,
                 "is_superuser": True,

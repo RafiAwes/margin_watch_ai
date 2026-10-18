@@ -11,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
     """
     Serializer for User profile representation.
     Enforces role-based rate masking: `default_hourly_cost_rate` is only visible
-    if the requesting user is an AGENCY_MANAGER.
+    if the requesting user is a MANAGER.
     """
 
     class Meta:
@@ -32,9 +32,9 @@ class UserSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get("request")
 
-        # Security rate masking: only AGENCY_MANAGER can view internal hourly rates
+        # Security rate masking: only MANAGER can view internal hourly rates
         requesting_user = getattr(request, "user", None)
-        is_manager = requesting_user and getattr(requesting_user, "role", None) == UserRole.AGENCY_MANAGER
+        is_manager = requesting_user and getattr(requesting_user, "role", None) == UserRole.MANAGER
 
         if not is_manager:
             data.pop("default_hourly_cost_rate", None)

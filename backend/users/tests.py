@@ -7,14 +7,14 @@ from users.models import User, UserRole
 
 class JWTAuthenticationTests(APITestCase):
     def setUp(self):
-        # Create an Agency Manager
+        # Create a Manager
         self.manager_password = "SecureManagerPass123!"
         self.manager = User.objects.create_user(
             email="manager@agency.com",
             password=self.manager_password,
             first_name="Sarah",
             last_name="Connor",
-            role=UserRole.AGENCY_MANAGER,
+            role=UserRole.MANAGER,
             default_hourly_cost_rate=Decimal("125.0000"),
             is_staff=True,
         )
@@ -61,7 +61,7 @@ class JWTAuthenticationTests(APITestCase):
         self.assertEqual(user_data["email"], "manager@agency.com")
         self.assertEqual(user_data["first_name"], "Sarah")
         self.assertEqual(user_data["last_name"], "Connor")
-        self.assertEqual(user_data["role"], UserRole.AGENCY_MANAGER)
+        self.assertEqual(user_data["role"], UserRole.MANAGER)
 
     def test_tc_auth_02_invalid_password(self):
         """Invalid password returns HTTP 401 Unauthorized."""
@@ -107,7 +107,7 @@ class JWTAuthenticationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_tc_auth_06_manager_profile_includes_cost_rate(self):
-        """Agency Manager calling /api/v1/auth/me/ can see their default_hourly_cost_rate."""
+        """Manager calling /api/v1/auth/me/ can see their default_hourly_cost_rate."""
         login_response = self.client.post(
             self.login_url,
             {"email": "manager@agency.com", "password": self.manager_password},
@@ -119,7 +119,7 @@ class JWTAuthenticationTests(APITestCase):
         response = self.client.get(self.me_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["email"], "manager@agency.com")
-        self.assertEqual(response.data["role"], UserRole.AGENCY_MANAGER)
+        self.assertEqual(response.data["role"], UserRole.MANAGER)
         self.assertIn("default_hourly_cost_rate", response.data)
         self.assertEqual(Decimal(response.data["default_hourly_cost_rate"]), Decimal("125.0000"))
 
