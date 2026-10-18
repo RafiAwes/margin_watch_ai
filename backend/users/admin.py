@@ -31,7 +31,7 @@ class CustomUserAdmin(BaseUserAdmin):
             {"fields": ("first_name", "last_name")},
         ),
         (
-            _("Agency Roles & Financial Rates"),
+            _("Roles & Financial Rates"),
             {"fields": ("role", "default_hourly_cost_rate")},
         ),
         (

@@ -11,7 +11,7 @@ from django.utils.translation import gettext_lazy as _
 
 
 class UserRole(models.TextChoices):
-    AGENCY_MANAGER = "AGENCY_MANAGER", _("Agency Manager")
+    MANAGER = "MANAGER", _("Manager")
     TEAM_MEMBER = "TEAM_MEMBER", _("Team Member")
 
 
@@ -38,7 +38,7 @@ class CustomUserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("role", UserRole.AGENCY_MANAGER)
+        extra_fields.setdefault("role", UserRole.MANAGER)
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError(_("Superuser must have is_staff=True."))
@@ -50,7 +50,7 @@ class CustomUserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin):
     """
-    MarginWatch Custom User representing agency staff members (Agency Managers and Team Members).
+    MarginWatch Custom User representing agency staff members (Managers and Team Members).
     Follows docs/data-model.md §3.1 specification.
     """
 
@@ -119,4 +119,4 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_manager(self):
-        return self.role == UserRole.AGENCY_MANAGER
+        return self.role == UserRole.MANAGER

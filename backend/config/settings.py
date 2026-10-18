@@ -78,11 +78,19 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 
+import sys
+
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 # Neon PostgreSQL configuration via DATABASE_URL / DATABASE_URL_UNPOOLED
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_URL_UNPOOLED")
+is_test_or_migration = any(cmd in sys.argv for cmd in ["test", "migrate", "makemigrations"])
+
+# For tests and migrations, prefer unpooled direct connection to avoid PgBouncer session retention
+if is_test_or_migration and os.environ.get("DATABASE_URL_UNPOOLED"):
+    DATABASE_URL = os.environ.get("DATABASE_URL_UNPOOLED")
+else:
+    DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_URL_UNPOOLED")
 
 if DATABASE_URL:
     DATABASES = {
@@ -99,6 +107,9 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
+# Custom test runner to terminate lingering pooled connections during teardown
+TEST_RUNNER = "config.test_runner.NeonTestRunner"
 
 
 # Password validation
