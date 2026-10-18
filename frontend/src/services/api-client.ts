@@ -95,7 +95,6 @@ export function transformBackendUserToStoredUser(backendUser: BackendUser): Stor
   const user = transformBackendUserToUser(backendUser);
   return {
     ...user,
-    password: '••••••••',
   };
 }
 

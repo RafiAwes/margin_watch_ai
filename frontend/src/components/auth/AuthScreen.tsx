@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   Briefcase,
@@ -19,6 +19,7 @@ import {
 import {
   authenticateUser,
   authenticateUserWithApi,
+  getKnownPassword,
   registerNewUserWithApi,
 } from '../../services/auth-and-store';
 import { formatCurrency } from '../../lib/financial-engine';
@@ -54,8 +55,22 @@ export const AuthScreen: React.FC<{
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
 
+  // Only display genuine registered accounts, filtering out mock placeholders
+  const displayedRegisteredAccounts = useMemo(() => {
+    return registeredUsers.filter(
+      (u) =>
+        u.email.toLowerCase() === 'manager@agency.com' ||
+        u.email.toLowerCase() === 'dev@agency.com' ||
+        (!u.email.endsWith('@vanguard-agency.io') &&
+          !u.id.startsWith('usr_mgr_01') &&
+          !u.id.startsWith('usr_dev_02') &&
+          !u.id.startsWith('usr_dev_03') &&
+          !u.id.startsWith('usr_dev_04'))
+    );
+  }, [registeredUsers]);
+
   // Check if typed login email matches an existing registered user
-  const matchedRegisteredUser = registeredUsers.find(
+  const matchedRegisteredUser = displayedRegisteredAccounts.find(
     (u) => u.email.trim().toLowerCase() === loginEmail.trim().toLowerCase()
   );
 
@@ -64,22 +79,31 @@ export const AuthScreen: React.FC<{
     setLoginError(null);
     setIsSubmitting(true);
 
-    const defaultPassword =
-      matchedRegisteredUser?.password ||
+    const emailToUse = loginEmail.trim();
+    if (!emailToUse) {
+      setLoginError('Please enter your work email address.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const resolvedPassword =
+      loginPassword ||
+      (matchedRegisteredUser?.password && matchedRegisteredUser.password !== '••••••••'
+        ? matchedRegisteredUser.password
+        : '') ||
+      getKnownPassword(emailToUse) ||
       (loginRole === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
 
-    const emailToUse =
-      loginEmail.trim() ||
-      (loginRole === 'MANAGER'
-        ? 'manager@agency.com'
-        : 'dev@agency.com');
-
-    const passwordToUse = loginPassword || defaultPassword;
+    if (!resolvedPassword) {
+      setLoginError('Please enter your account password.');
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const result = await authenticateUserWithApi(
         emailToUse,
-        passwordToUse,
+        resolvedPassword,
         loginRole
       );
 
@@ -220,7 +244,18 @@ export const AuthScreen: React.FC<{
   const quickFillAccount = (account: StoredUserAccount) => {
     setMode('LOGIN');
     setLoginEmail(account.email);
-    setLoginPassword(account.password);
+
+    // Resolve the real plaintext password for this registered account
+    const resolvedPassword =
+      (account.password && account.password !== '••••••••' ? account.password : '') ||
+      getKnownPassword(account.email) ||
+      (account.email.toLowerCase() === 'manager@agency.com'
+        ? 'ManagerPass123!'
+        : account.email.toLowerCase() === 'dev@agency.com'
+        ? 'DevPass123!'
+        : '');
+
+    setLoginPassword(resolvedPassword);
     setLoginRole(account.role);
     setLoginError(null);
   };
@@ -316,47 +351,76 @@ export const AuthScreen: React.FC<{
             </div>
           </div>
 
-          {/* Pre-Seeded Directory Accounts for Quick Evaluation Sign-In */}
+          {/* Registered Workspace Accounts for Quick Sign-In */}
           <div className="bg-white border border-[#E3E6ED] rounded-2xl p-4 space-y-3 shadow-2xs">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-[#202633]">
                 Registered Workspace Accounts (Click to Fill Credentials)
               </span>
               <span className="text-[11px] text-[#697386] font-mono-tabular">
-                {registeredUsers.length} accounts
+                {displayedRegisteredAccounts.length}{' '}
+                {displayedRegisteredAccounts.length === 1 ? 'account' : 'accounts'}
               </span>
             </div>
-            <div className="divide-y divide-[#E3E6ED]/60 max-h-56 overflow-y-auto">
-              {registeredUsers.map((acc) => (
-                <button
-                  key={acc.id}
-                  type="button"
-                  onClick={() => quickFillAccount(acc)}
-                  className="w-full py-2.5 px-2 text-left hover:bg-[#F6F7F9] rounded-lg flex items-center justify-between gap-2 transition-colors group"
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-[#202633] group-hover:text-[#6558D3] truncate">
-                      {acc.full_name}{' '}
-                      <span className="font-normal text-[#697386]">
-                        · {acc.title}
-                      </span>
-                    </div>
-                    <div className="text-[11px] font-mono text-[#697386] truncate">
-                      {acc.email}
-                    </div>
-                  </div>
-                  <span
-                    className={`px-2 py-0.5 text-[11px] font-mono font-medium rounded border shrink-0 ${
-                      acc.role === 'MANAGER'
-                        ? 'bg-[#F3F1FF] border-[#DAD4FC] text-[#6558D3]'
-                        : 'bg-[#F0F2F6] border-[#CBD0DC] text-[#4E5666]'
-                    }`}
-                  >
-                    {acc.role}
-                  </span>
-                </button>
-              ))}
-            </div>
+
+            {displayedRegisteredAccounts.length === 0 ? (
+              <div className="py-6 px-3 text-center text-xs text-[#697386] bg-[#F6F7F9] rounded-xl border border-dashed border-[#CBD0DC]">
+                No registered accounts found. Switch to the Register tab to create your workspace account.
+              </div>
+            ) : (
+              <div className="divide-y divide-[#E3E6ED]/60 max-h-56 overflow-y-auto pr-0.5">
+                {displayedRegisteredAccounts.map((acc) => {
+                  const isSelected =
+                    loginEmail.trim().toLowerCase() === acc.email.trim().toLowerCase();
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => quickFillAccount(acc)}
+                      className={`w-full py-2.5 px-2 text-left rounded-lg flex items-center justify-between gap-2 transition-all group ${
+                        isSelected
+                          ? 'bg-[#F3F1FF] ring-1 ring-[#6558D3]'
+                          : 'hover:bg-[#F6F7F9]'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div
+                          className={`text-xs font-semibold truncate ${
+                            isSelected
+                              ? 'text-[#6558D3]'
+                              : 'text-[#202633] group-hover:text-[#6558D3]'
+                          }`}
+                        >
+                          {acc.full_name}{' '}
+                          <span className="font-normal text-[#697386]">
+                            · {acc.title}
+                          </span>
+                        </div>
+                        <div className="text-[11px] font-mono text-[#697386] truncate">
+                          {acc.email}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isSelected && (
+                          <span className="text-[10px] text-[#6558D3] font-medium hidden sm:inline">
+                            Filled ✓
+                          </span>
+                        )}
+                        <span
+                          className={`px-2 py-0.5 text-[11px] font-mono font-medium rounded border ${
+                            acc.role === 'MANAGER'
+                              ? 'bg-[#F3F1FF] border-[#DAD4FC] text-[#6558D3]'
+                              : 'bg-[#F0F2F6] border-[#CBD0DC] text-[#4E5666]'
+                          }`}
+                        >
+                          {acc.role}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -448,7 +512,7 @@ export const AuthScreen: React.FC<{
                     autoComplete="email"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="Enter any email (e.g. name@agency.io)"
+                    placeholder="Enter registered email (e.g. manager@agency.com)"
                     className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
                 </div>
@@ -467,7 +531,7 @@ export const AuthScreen: React.FC<{
                       autoComplete="current-password"
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="Enter any password"
+                      placeholder="Enter account password"
                       className="w-full h-10 pl-3 pr-10 text-sm rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                     <button

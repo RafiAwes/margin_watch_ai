@@ -23,6 +23,7 @@ import { apiClient, ApiError } from './api-client';
 
 const STORAGE_KEYS = {
   USERS: 'marginwatch_users_v1',
+  CREDENTIALS: 'marginwatch_credentials_v1',
   SESSION: 'marginwatch_session_v1',
   CLIENTS: 'marginwatch_clients_v1',
   PROJECTS: 'marginwatch_projects_v1',
@@ -30,18 +31,51 @@ const STORAGE_KEYS = {
   EXPENSES: 'marginwatch_expenses_v1',
 } as const;
 
-const DEFAULT_ACCOUNTS: StoredUserAccount[] = TEAM_DIRECTORY.map((u) => ({
-  ...u,
-  password:
-    u.email === 'manager@agency.com'
-      ? 'ManagerPass123!'
-      : u.email === 'dev@agency.com'
-      ? 'DevPass123!'
-      : u.role === 'MANAGER'
-      ? 'Manager123!'
-      : 'Member123!',
-  created_at: '2026-06-01',
-}));
+export const INITIAL_REGISTERED_ACCOUNTS: StoredUserAccount[] = [
+  {
+    id: 'usr_mgr_backend',
+    email: 'manager@agency.com',
+    full_name: 'Sarah Connor',
+    role: 'MANAGER',
+    title: 'Agency Operations Director',
+    default_hourly_cost: 125,
+    password: 'ManagerPass123!',
+    created_at: '2026-06-01',
+  },
+  {
+    id: 'usr_dev_backend',
+    email: 'dev@agency.com',
+    full_name: 'Alex Mercer',
+    role: 'TEAM_MEMBER',
+    title: 'Senior Software Engineer',
+    default_hourly_cost: 65,
+    password: 'DevPass123!',
+    created_at: '2026-06-01',
+  },
+];
+
+const DEFAULT_CREDENTIALS: Record<string, string> = {
+  'manager@agency.com': 'ManagerPass123!',
+  'dev@agency.com': 'DevPass123!',
+};
+
+export function loadKnownCredentials(): Record<string, string> {
+  const loaded = safeLoad<Record<string, string>>(STORAGE_KEYS.CREDENTIALS, DEFAULT_CREDENTIALS);
+  return { ...DEFAULT_CREDENTIALS, ...loaded };
+}
+
+export function saveKnownCredential(email: string, password?: string): void {
+  if (!email || !password || password === '••••••••') return;
+  const creds = loadKnownCredentials();
+  creds[email.trim().toLowerCase()] = password;
+  safeSave(STORAGE_KEYS.CREDENTIALS, creds);
+}
+
+export function getKnownPassword(email: string): string {
+  if (!email) return '';
+  const creds = loadKnownCredentials();
+  return creds[email.trim().toLowerCase()] || '';
+}
 
 function safeLoad<T>(key: string, fallback: T): T {
   try {
@@ -61,13 +95,50 @@ function safeSave<T>(key: string, value: T): void {
   }
 }
 
+/**
+ * Loads stored user accounts, strictly filtering out any legacy un-registered
+ * demo placeholders (e.g. @vanguard-agency.io mock accounts) and re-hydrating
+ * actual plaintext passwords so accounts can be auto-filled in the login form.
+ */
 export function loadStoredUsers(): StoredUserAccount[] {
   const loaded = safeLoad<StoredUserAccount[] | null>(STORAGE_KEYS.USERS, null);
+  const creds = loadKnownCredentials();
+
   if (!loaded || loaded.length === 0) {
-    safeSave(STORAGE_KEYS.USERS, DEFAULT_ACCOUNTS);
-    return DEFAULT_ACCOUNTS;
+    const initial = INITIAL_REGISTERED_ACCOUNTS.map((u) => ({
+      ...u,
+      password: creds[u.email.toLowerCase()] || u.password,
+    }));
+    safeSave(STORAGE_KEYS.USERS, initial);
+    return initial;
   }
-  return loaded;
+
+  // Filter out any legacy unregistered mock accounts from older demo prototypes
+  const registeredOnly = loaded.filter(
+    (u) =>
+      u.email.toLowerCase() === 'manager@agency.com' ||
+      u.email.toLowerCase() === 'dev@agency.com' ||
+      (!u.email.endsWith('@vanguard-agency.io') &&
+        !u.id.startsWith('usr_mgr_01') &&
+        !u.id.startsWith('usr_dev_02') &&
+        !u.id.startsWith('usr_dev_03') &&
+        !u.id.startsWith('usr_dev_04'))
+  );
+
+  const listToUse = registeredOnly.length > 0 ? registeredOnly : INITIAL_REGISTERED_ACCOUNTS;
+
+  // Re-hydrate each account with its actual registered password
+  const hydrated = listToUse.map((u) => {
+    const knownPwd = creds[u.email.toLowerCase()];
+    const currentPwd = u.password && u.password !== '••••••••' ? u.password : undefined;
+    return {
+      ...u,
+      password: knownPwd || currentPwd || (u.role === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!'),
+    };
+  });
+
+  safeSave(STORAGE_KEYS.USERS, hydrated);
+  return hydrated;
 }
 
 export function saveStoredUsers(users: StoredUserAccount[]): void {
@@ -130,13 +201,13 @@ export function resetWorkspaceToDefaults(): {
   timeEntries: TimeEntry[];
   expenses: Expense[];
 } {
-  safeSave(STORAGE_KEYS.USERS, DEFAULT_ACCOUNTS);
+  safeSave(STORAGE_KEYS.USERS, INITIAL_REGISTERED_ACCOUNTS);
   safeSave(STORAGE_KEYS.CLIENTS, INITIAL_CLIENTS);
   safeSave(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
   safeSave(STORAGE_KEYS.TIME_ENTRIES, INITIAL_TIME_ENTRIES);
   safeSave(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
   return {
-    users: DEFAULT_ACCOUNTS,
+    users: INITIAL_REGISTERED_ACCOUNTS,
     clients: INITIAL_CLIENTS,
     projects: INITIAL_PROJECTS,
     timeEntries: INITIAL_TIME_ENTRIES,
@@ -261,6 +332,7 @@ export async function authenticateUserWithApi(
 > {
   try {
     const loginResult = await apiClient.auth.login(email, password);
+    saveKnownCredential(email, password);
     saveActiveSession(loginResult.session);
 
     // Attempt to load agency directory from backend
@@ -268,8 +340,36 @@ export async function authenticateUserWithApi(
     try {
       const apiUsers = await apiClient.users.list();
       if (apiUsers && apiUsers.length > 0) {
-        saveStoredUsers(apiUsers);
-        updatedUsers = apiUsers;
+        const creds = loadKnownCredentials();
+        const existingUsers = loadStoredUsers();
+        const existingMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
+
+        const merged: StoredUserAccount[] = apiUsers
+          .filter(
+            (u) =>
+              !u.email.endsWith('@vanguard-agency.io') &&
+              !u.id.startsWith('usr_mgr_01') &&
+              !u.id.startsWith('usr_dev_02') &&
+              !u.id.startsWith('usr_dev_03') &&
+              !u.id.startsWith('usr_dev_04')
+          )
+          .map((apiUser) => {
+            const existing = existingMap.get(apiUser.email.toLowerCase());
+            const userPassword =
+              (apiUser.email.toLowerCase() === email.trim().toLowerCase() ? password : undefined) ||
+              creds[apiUser.email.toLowerCase()] ||
+              (existing?.password && existing.password !== '••••••••' ? existing.password : undefined) ||
+              (apiUser.role === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
+
+            return {
+              ...apiUser,
+              title: existing?.title || apiUser.title,
+              password: userPassword,
+            };
+          });
+
+        saveStoredUsers(merged);
+        updatedUsers = merged;
       }
     } catch {
       // Non-critical if users list endpoint isn't accessible
@@ -293,6 +393,9 @@ export async function authenticateUserWithApi(
     // Network error or backend offline: fallback to client-side credential store with a console notice
     console.warn('Backend unavailable, falling back to local credentials store:', err?.message);
     const fallbackResult = authenticateUser(email, password, fallbackRole);
+    if (fallbackResult.ok) {
+      saveKnownCredential(email, password);
+    }
     return {
       ...fallbackResult,
       fromApi: false,
@@ -321,8 +424,35 @@ export async function syncUsersFromApi(): Promise<StoredUserAccount[]> {
   try {
     const apiUsers = await apiClient.users.list();
     if (apiUsers && apiUsers.length > 0) {
-      saveStoredUsers(apiUsers);
-      return apiUsers;
+      const creds = loadKnownCredentials();
+      const existingUsers = loadStoredUsers();
+      const existingMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
+
+      const merged: StoredUserAccount[] = apiUsers
+        .filter(
+          (u) =>
+            !u.email.endsWith('@vanguard-agency.io') &&
+            !u.id.startsWith('usr_mgr_01') &&
+            !u.id.startsWith('usr_dev_02') &&
+            !u.id.startsWith('usr_dev_03') &&
+            !u.id.startsWith('usr_dev_04')
+        )
+        .map((apiUser) => {
+          const existing = existingMap.get(apiUser.email.toLowerCase());
+          const password =
+            creds[apiUser.email.toLowerCase()] ||
+            (existing?.password && existing.password !== '••••••••' ? existing.password : undefined) ||
+            (apiUser.role === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
+
+          return {
+            ...apiUser,
+            title: existing?.title || apiUser.title,
+            password,
+          };
+        });
+
+      saveStoredUsers(merged);
+      return merged;
     }
   } catch (e) {
     console.warn('Could not sync users from backend API:', e);
@@ -378,6 +508,7 @@ export async function registerNewUserWithApi(input: {
       regResult.session.user.title = input.title.trim();
     }
 
+    saveKnownCredential(input.email, input.password);
     saveActiveSession(regResult.session);
 
     // Sync directory from backend
@@ -385,12 +516,24 @@ export async function registerNewUserWithApi(input: {
     try {
       const apiUsers = await apiClient.users.list();
       if (apiUsers && apiUsers.length > 0) {
-        // Preserve newly registered user's custom title & local credential cache
-        updatedUsers = apiUsers.map((u) =>
-          u.email.toLowerCase() === input.email.trim().toLowerCase()
-            ? { ...u, title: input.title?.trim() || u.title, password: input.password }
-            : u
-        );
+        const creds = loadKnownCredentials();
+        updatedUsers = apiUsers
+          .filter(
+            (u) =>
+              !u.email.endsWith('@vanguard-agency.io') &&
+              !u.id.startsWith('usr_mgr_01') &&
+              !u.id.startsWith('usr_dev_02') &&
+              !u.id.startsWith('usr_dev_03') &&
+              !u.id.startsWith('usr_dev_04')
+          )
+          .map((u) => {
+            const isNewlyRegistered = u.email.toLowerCase() === input.email.trim().toLowerCase();
+            return {
+              ...u,
+              title: isNewlyRegistered ? (input.title?.trim() || u.title) : u.title,
+              password: isNewlyRegistered ? input.password : (creds[u.email.toLowerCase()] || u.password),
+            };
+          });
         saveStoredUsers(updatedUsers);
       }
     } catch {
@@ -399,7 +542,10 @@ export async function registerNewUserWithApi(input: {
         title: input.title,
         password: input.password,
       };
-      updatedUsers = [...updatedUsers.filter((u) => u.email.toLowerCase() !== input.email.trim().toLowerCase()), newStored];
+      updatedUsers = [
+        ...updatedUsers.filter((u) => u.email.toLowerCase() !== input.email.trim().toLowerCase()),
+        newStored,
+      ];
       saveStoredUsers(updatedUsers);
     }
 
@@ -495,11 +641,29 @@ export async function createMemberWithApi(input: {
       default_hourly_cost_rate: input.default_hourly_cost,
     });
 
+    saveKnownCredential(input.email, defaultPassword);
     let updatedUsers = loadStoredUsers();
     try {
       const apiUsers = await apiClient.users.list();
       if (apiUsers && apiUsers.length > 0) {
-        updatedUsers = apiUsers;
+        const creds = loadKnownCredentials();
+        updatedUsers = apiUsers
+          .filter(
+            (u) =>
+              !u.email.endsWith('@vanguard-agency.io') &&
+              !u.id.startsWith('usr_mgr_01') &&
+              !u.id.startsWith('usr_dev_02') &&
+              !u.id.startsWith('usr_dev_03') &&
+              !u.id.startsWith('usr_dev_04')
+          )
+          .map((u) => {
+            const isCreated = u.email.toLowerCase() === input.email.trim().toLowerCase();
+            return {
+              ...u,
+              title: isCreated ? (input.title?.trim() || u.title) : u.title,
+              password: isCreated ? defaultPassword : (creds[u.email.toLowerCase()] || u.password),
+            };
+          });
         saveStoredUsers(updatedUsers);
       }
     } catch {
@@ -812,9 +976,13 @@ export function updateUserPassword(
   newPassword: string
 ): { ok: true; updatedUsers: StoredUserAccount[] } {
   const users = loadStoredUsers();
-  const updatedUsers = users.map((u) =>
-    u.id === userId ? { ...u, password: newPassword } : u
-  );
+  const updatedUsers = users.map((u) => {
+    if (u.id === userId) {
+      saveKnownCredential(u.email, newPassword);
+      return { ...u, password: newPassword };
+    }
+    return u;
+  });
   saveStoredUsers(updatedUsers);
   return { ok: true, updatedUsers };
 }
