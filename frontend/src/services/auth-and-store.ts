@@ -4,6 +4,8 @@ import {
   Client,
   EnrichedProject,
   Expense,
+  ExpenseCategory,
+  ExpenseStatus,
   Project,
   ProjectStatus,
   StoredUserAccount,
@@ -1368,4 +1370,114 @@ export async function updateProjectEstimateWithApi(
       : p
   );
   persistProjects(updated);
+}
+
+// -----------------------------------------------------------------------------
+// Time Entry & Expense API Integration Helpers
+// Financial records are written to the backend only: a failed request throws
+// instead of falling back to local persistence, so no unsaved costs appear in
+// the UI.
+// -----------------------------------------------------------------------------
+
+export function transformBackendTimeEntryToTimeEntry(backendEntry: any): TimeEntry {
+  // hourly_cost_snapshot and computed_cost are masked by the backend for TEAM_MEMBER requests
+  const snapshot = backendEntry.hourly_cost_snapshot;
+  const cost = backendEntry.computed_cost;
+  return {
+    id: String(backendEntry.id),
+    project_id: String(backendEntry.project),
+    user_id: String(backendEntry.user_id || backendEntry.user),
+    user_name: backendEntry.user_full_name || backendEntry.user_email || '',
+    work_date: backendEntry.work_date,
+    hours: parseFloat(backendEntry.recorded_hours),
+    description: backendEntry.description || '',
+    hourly_cost_snapshot: snapshot !== undefined && snapshot !== null ? parseFloat(snapshot) : 0,
+    computed_cost: cost !== undefined && cost !== null ? parseFloat(cost) : 0,
+    created_at: backendEntry.created_at || new Date().toISOString(),
+  };
+}
+
+export function transformBackendExpenseToExpense(backendExpense: any): Expense {
+  const status = backendExpense.status as ExpenseStatus;
+  return {
+    id: String(backendExpense.id),
+    project_id: String(backendExpense.project),
+    submitted_by_id: String(backendExpense.user_id || backendExpense.user),
+    submitted_by_name: backendExpense.user_full_name || backendExpense.user_email || '',
+    expense_date: backendExpense.expense_date,
+    category: backendExpense.category as ExpenseCategory,
+    amount: parseFloat(backendExpense.amount),
+    description: backendExpense.description || '',
+    status,
+    rejection_reason: status === 'REJECTED' ? backendExpense.review_note || null : null,
+    reviewed_by_name: backendExpense.reviewed_by_name || backendExpense.reviewed_by_email || null,
+    reviewed_at: backendExpense.reviewed_at || null,
+  };
+}
+
+export async function syncTimeEntriesFromApi(): Promise<TimeEntry[] | null> {
+  try {
+    const apiEntries = await apiClient.timeEntries.list();
+    const transformed = apiEntries.map(transformBackendTimeEntryToTimeEntry);
+    persistTimeEntries(transformed);
+    return transformed;
+  } catch (err) {
+    console.warn('Could not sync time entries from backend API:', err);
+    return null;
+  }
+}
+
+export async function syncExpensesFromApi(): Promise<Expense[] | null> {
+  try {
+    const apiExpenses = await apiClient.expenses.list();
+    const transformed = apiExpenses.map(transformBackendExpenseToExpense);
+    persistExpenses(transformed);
+    return transformed;
+  } catch (err) {
+    console.warn('Could not sync expenses from backend API:', err);
+    return null;
+  }
+}
+
+export async function createTimeEntryWithApi(data: {
+  project_id: string;
+  work_date: string;
+  hours: number;
+  description: string;
+}): Promise<TimeEntry> {
+  const saved = await apiClient.timeEntries.create({
+    project_id: data.project_id,
+    work_date: data.work_date,
+    recorded_hours: data.hours,
+    description: data.description,
+  });
+  return transformBackendTimeEntryToTimeEntry(saved);
+}
+
+export async function deleteTimeEntryWithApi(timeEntryId: string): Promise<void> {
+  await apiClient.timeEntries.delete(timeEntryId);
+}
+
+export async function submitExpenseWithApi(data: {
+  project_id: string;
+  expense_date: string;
+  category: ExpenseCategory;
+  amount: number;
+  description: string;
+}): Promise<Expense> {
+  const saved = await apiClient.expenses.create(data);
+  return transformBackendExpenseToExpense(saved);
+}
+
+export async function deleteExpenseWithApi(expenseId: string): Promise<void> {
+  await apiClient.expenses.delete(expenseId);
+}
+
+export async function reviewExpenseWithApi(
+  expenseId: string,
+  action: 'APPROVE' | 'REJECT',
+  reviewNote = ''
+): Promise<Expense> {
+  const reviewed = await apiClient.expenses.review(expenseId, action, reviewNote);
+  return transformBackendExpenseToExpense(reviewed);
 }

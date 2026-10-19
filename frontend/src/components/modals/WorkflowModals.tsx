@@ -760,7 +760,7 @@ export const SubmitExpenseModal: React.FC<{
     defaultProjectId ?? activeProjects[0]?.id ?? ''
   );
   const [expenseDate, setExpenseDate] = useState('2026-10-17');
-  const [category, setCategory] = useState<ExpenseCategory>('INFRASTRUCTURE');
+  const [category, setCategory] = useState<ExpenseCategory>('SOFTWARE_LICENSE');
   const [amountInput, setAmountInput] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -898,9 +898,9 @@ export const SubmitExpenseModal: React.FC<{
                 onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
                 className="w-full h-10 px-3 text-sm rounded-md border border-slate-300 bg-white"
               >
-                <option value="INFRASTRUCTURE">Infrastructure</option>
-                <option value="SOFTWARE">Software License</option>
-                <option value="CONTRACTOR">Subcontractor</option>
+                <option value="SOFTWARE_LICENSE">Software License</option>
+                <option value="SUBCONTRACTOR">Subcontractor</option>
+                <option value="HARDWARE">Hardware</option>
                 <option value="TRAVEL">Client Travel</option>
                 <option value="OTHER">Other</option>
               </select>
