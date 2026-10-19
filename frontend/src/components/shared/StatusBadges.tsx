@@ -281,7 +281,7 @@ export const BudgetForecastChart: React.FC<{
                       <strong className="text-slate-900">
                         {formatCurrency(financials.actual_total_cost, project.currency)}
                       </strong>{' '}
-                      ({financials.budget_consumed_pct.toFixed(1)}%)
+                      ({formatPercentage(financials.budget_consumed_pct)})
                     </span>
                     <span>·</span>
                     <span>

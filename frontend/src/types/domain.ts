@@ -93,14 +93,16 @@ export interface ProjectFinancials {
   pending_expense_amount: number;
   rejected_expense_amount: number;
   actual_total_cost: number;
-  budget_consumed_pct: number;
+  /** `null` when the planned budget is missing or zero (never coerced to 0). */
+  budget_consumed_pct: number | null;
   projected_remaining_cost: number | null;
   projected_final_cost: number | null;
   projected_cost_variance: number | null;
   projected_profit: number | null;
   projected_margin_pct: number | null;
   planned_profit: number;
-  planned_margin_pct: number;
+  /** `null` when contract revenue is zero. */
+  planned_margin_pct: number | null;
   risk_status: ProjectRiskStatus;
   risk_reasons: string[];
 }

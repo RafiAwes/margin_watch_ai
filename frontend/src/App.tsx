@@ -32,6 +32,7 @@ import {
   AuthSession,
   Client,
   EnrichedProject,
+  ProjectFinancials,
   Expense,
   ExpenseCategory,
   Project,
@@ -41,8 +42,7 @@ import {
   TimeEntry,
 } from './types/domain';
 import {
-  calculatePortfolioSummary,
-  enrichProjects,
+  PortfolioSummary,
   formatCurrency,
   formatHours,
   formatPercentage,
@@ -75,6 +75,12 @@ import {
   reviewExpenseWithApi,
 } from './services/auth-and-store';
 import { onApiSessionExpired } from './services/api-client';
+import {
+  EMPTY_PORTFOLIO,
+  UNAVAILABLE_FINANCIALS,
+  fetchPortfolioSummary,
+  fetchProjectFinancials,
+} from './services/financials';
 import { AuthScreen } from './components/auth/AuthScreen';
 import {
   BudgetForecastChart,
@@ -194,6 +200,37 @@ export default function App() {
   // Guards against duplicate financial records from repeated clicks while a request is in flight
   const financialMutationInFlight = useRef(false);
 
+  // Authoritative financials from the backend engine (managers only, financial-rules §7).
+  // Refetched shortly after any project, time-entry or expense change.
+  const [financialsByProject, setFinancialsByProject] = useState<
+    Record<string, ProjectFinancials>
+  >({});
+  const [portfolioSummary, setPortfolioSummary] =
+    useState<PortfolioSummary>(EMPTY_PORTFOLIO);
+  const isManagerSession = session?.user.role === 'MANAGER';
+
+  useEffect(() => {
+    if (!isManagerSession) {
+      setFinancialsByProject({});
+      setPortfolioSummary(EMPTY_PORTFOLIO);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      Promise.all([fetchProjectFinancials(), fetchPortfolioSummary('USD')])
+        .then(([byProject, portfolio]) => {
+          if (cancelled) return;
+          setFinancialsByProject(byProject);
+          setPortfolioSummary(portfolio);
+        })
+        .catch((err) => console.warn('Could not load financial summaries from backend API:', err));
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isManagerSession, projects, timeEntries, expenses]);
+
   // Navigation & Route State
   const [route, setRoute] = useState<WorkspaceRoute>('DASHBOARD');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -265,11 +302,15 @@ export default function App() {
 
   const currentUser = session?.user ?? null;
 
-  // Derived Enriched Projects & Portfolio Summary
-  const enrichedProjects = useMemo(
-    () => enrichProjects(projects, clients, timeEntries, expenses),
-    [projects, clients, timeEntries, expenses]
-  );
+  // Projects joined with their client name and backend-computed financials
+  const enrichedProjects = useMemo<EnrichedProject[]>(() => {
+    const clientNames = new Map(clients.map((c) => [c.id, c.name]));
+    return projects.map((p) => ({
+      ...p,
+      client_name: clientNames.get(p.client_id) || 'Unknown Client',
+      financials: financialsByProject[p.id] ?? UNAVAILABLE_FINANCIALS,
+    }));
+  }, [projects, clients, financialsByProject]);
 
   const visibleProjects = useMemo(() => {
     if (!currentUser) return [];
@@ -278,11 +319,6 @@ export default function App() {
       p.assigned_member_ids.includes(currentUser.id)
     );
   }, [enrichedProjects, currentUser]);
-
-  const portfolioSummary = useMemo(
-    () => calculatePortfolioSummary(enrichedProjects, expenses, 'USD'),
-    [enrichedProjects, expenses]
-  );
 
   const filteredProjects = useMemo(() => {
     return visibleProjects.filter((p) => {
@@ -1286,7 +1322,7 @@ export default function App() {
                           Needs Attention
                         </span>
                         <span className="text-[11px] text-[#697386] block">
-                          ≥85% budget used or missing estimate
+                          ≥80% budget used or missing estimate
                         </span>
                       </div>
                       <div className="flex items-baseline gap-2 my-2 flex-wrap">
@@ -1490,7 +1526,7 @@ export default function App() {
                                       )}
                                     </div>
                                     <div className="text-[#697386] text-[11px]">
-                                      {f.budget_consumed_pct.toFixed(1)}% of{' '}
+                                      {formatPercentage(f.budget_consumed_pct)} of{' '}
                                       {formatCurrency(
                                         proj.planned_cost_budget,
                                         proj.currency
@@ -1502,7 +1538,7 @@ export default function App() {
                                         style={{
                                           width: `${Math.min(
                                             100,
-                                            f.budget_consumed_pct
+                                            f.budget_consumed_pct ?? 0
                                           )}%`,
                                         }}
                                       />
@@ -1596,7 +1632,7 @@ export default function App() {
                               <div className="grid grid-cols-2 gap-2 p-2.5 rounded-xl bg-[#F6F7F9] border border-[#E3E6ED] text-xs font-mono-tabular">
                                 <div>
                                   <span className="font-sans text-[11px] text-[#697386] block">
-                                    Actual ({f.budget_consumed_pct.toFixed(1)}%)
+                                    Actual ({formatPercentage(f.budget_consumed_pct)})
                                   </span>
                                   <strong className="text-[#202633]">
                                     {formatCurrency(
@@ -2213,7 +2249,7 @@ export default function App() {
                                         )}
                                       </div>
                                       <div className="text-slate-500">
-                                        {f.budget_consumed_pct.toFixed(1)}%
+                                        {formatPercentage(f.budget_consumed_pct)}
                                       </div>
                                     </td>
                                     <td className="py-3.5 px-4 text-right font-mono-tabular whitespace-nowrap">
@@ -2315,7 +2351,7 @@ export default function App() {
                               </div>
                               <div>
                                 <span className="font-sans text-slate-500 block">
-                                  Actual ({f.budget_consumed_pct.toFixed(1)}%)
+                                  Actual ({formatPercentage(f.budget_consumed_pct)})
                                 </span>
                                 <span className="font-semibold text-slate-900">
                                   {formatCurrency(

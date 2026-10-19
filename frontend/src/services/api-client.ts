@@ -701,6 +701,23 @@ export const apiClient = {
     },
   },
 
+  // Authoritative Financial Engine Endpoints (Manager only)
+  financials: {
+    async projectSummary(projectId: string): Promise<any> {
+      return apiClient.request<any>(`/projects/${projectId}/financial-summary/`);
+    },
+
+    async listSummaries(params?: URLSearchParams): Promise<any[]> {
+      return apiClient.listAll<any>('/projects/financial-summaries/', params);
+    },
+
+    async dashboard(currency = 'USD'): Promise<any> {
+      return apiClient.request<any>(
+        `/dashboard/summary/?currency=${encodeURIComponent(currency)}`
+      );
+    },
+  },
+
   /**
    * Health check to detect whether the Django backend server is running and reachable.
    */

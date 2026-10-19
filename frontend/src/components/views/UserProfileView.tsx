@@ -1089,8 +1089,8 @@ export const UserProfileView: React.FC<{
                 {
                   key: 'budget_threshold_alerts',
                   title:
-                    'Budget Consumption Threshold Alerts (85% Warning / 100% Critical)',
-                  desc: 'Notify immediately when logged hours or approved expenses push an active project over the 85% Warning or 100% Critical budget threshold.',
+                    'Budget Consumption Threshold Alerts (80% Warning / 100% Critical)',
+                  desc: 'Notify immediately when logged hours or approved expenses push an active project over the 80% Warning or 100% Critical budget threshold.',
                 },
                 {
                   key: 'expense_status_updates',
