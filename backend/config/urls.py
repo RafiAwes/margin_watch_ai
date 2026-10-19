@@ -6,11 +6,15 @@ from rest_framework.routers import DefaultRouter
 from users.views import UserViewSet
 from clients.views import ClientViewSet
 from projects.views import ProjectViewSet
+from time_tracking.views import TimeEntryViewSet
+from expenses.views import ExpenseViewSet
 
 router = DefaultRouter()
 router.register(r"users", UserViewSet, basename="user")
 router.register(r"clients", ClientViewSet, basename="client")
 router.register(r"projects", ProjectViewSet, basename="project")
+router.register(r"time-entries", TimeEntryViewSet, basename="time-entry")
+router.register(r"expenses", ExpenseViewSet, basename="expense")
 
 urlpatterns = [
     path("admin/", admin.site.urls),
