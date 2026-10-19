@@ -46,6 +46,8 @@ INSTALLED_APPS = [
     "users.apps.UsersConfig",
     "clients.apps.ClientsConfig",
     "projects.apps.ProjectsConfig",
+    "time_tracking.apps.TimeTrackingConfig",
+    "expenses.apps.ExpensesConfig",
 ]
 
 MIDDLEWARE = [
