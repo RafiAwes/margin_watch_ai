@@ -1,4 +1,4 @@
-import { AuthSession, StoredUserAccount, User, UserRole } from '../types/domain';
+import { AiRiskAnalysis, AuthSession, StoredUserAccount, User, UserRole } from '../types/domain';
 
 // Determine default API root.
 // When using the Vite dev server, '/api/v1' is automatically proxied to http://127.0.0.1:8000.
@@ -715,6 +715,15 @@ export const apiClient = {
       return apiClient.request<any>(
         `/dashboard/summary/?currency=${encodeURIComponent(currency)}`
       );
+    },
+  },
+
+  // AI Risk Advisor (Manager only; advisory, never changes figures)
+  ai: {
+    async analyzeProject(projectId: string): Promise<AiRiskAnalysis> {
+      return apiClient.request<AiRiskAnalysis>(`/projects/${projectId}/ai-risk-analysis/`, {
+        method: 'POST',
+      });
     },
   },
 

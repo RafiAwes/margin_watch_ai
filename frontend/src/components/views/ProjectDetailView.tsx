@@ -24,7 +24,8 @@ import {
   formatHours,
   formatPercentage,
 } from '../../lib/financial-engine';
-import { buildProjectAiRiskAnalysis } from '../../services/auth-and-store';
+import { apiClient } from '../../services/api-client';
+import { AiRiskAnalysis } from '../../types/domain';
 import {
   BudgetForecastChart,
   ExpenseStatusBadge,
@@ -70,14 +71,10 @@ export const ProjectDetailView: React.FC<{
     isManager ? initialTab : initialTab === 'OVERVIEW' ? 'TIME_ENTRIES' : initialTab
   );
   const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
-  const [lastAiRefreshAt, setLastAiRefreshAt] = useState<string>('10:15 UTC');
+  const [aiAnalysis, setAiAnalysis] = useState<AiRiskAnalysis | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const { financials } = project;
-
-  const aiAnalysis = useMemo(
-    () => buildProjectAiRiskAnalysis(project),
-    [project]
-  );
 
   const projectTimeEntries = timeEntries
     .filter((t) => t.project_id === project.id)
@@ -89,14 +86,17 @@ export const ProjectDetailView: React.FC<{
     .filter((e) => (isManager ? true : e.submitted_by_id === currentUser.id))
     .sort((a, b) => b.expense_date.localeCompare(a.expense_date));
 
-  const handleRefreshAi = () => {
+  // Calls Gemini only on explicit request; failures stay inside this panel
+  const handleRefreshAi = async () => {
     setIsAnalyzingAi(true);
-    window.setTimeout(() => {
+    setAiError(null);
+    try {
+      setAiAnalysis(await apiClient.ai.analyzeProject(project.id));
+    } catch (err: any) {
+      setAiError(err?.message || 'AI advisor is temporarily unavailable.');
+    } finally {
       setIsAnalyzingAi(false);
-      setLastAiRefreshAt(
-        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      );
-    }, 550);
+    }
   };
 
   return (
@@ -540,7 +540,11 @@ export const ProjectDetailView: React.FC<{
                       AI Risk Advisor
                     </h2>
                     <span className="text-[11px] text-[#3730A3] block">
-                      Advisory Analysis · Updated {lastAiRefreshAt}
+                      {aiAnalysis
+                        ? `Generated ${new Date(aiAnalysis.generated_at).toLocaleString()}${
+                            aiAnalysis.cached ? ' · cached' : ''
+                          } · ${aiAnalysis.model}`
+                        : 'Advisory only · runs on request'}
                     </span>
                   </div>
                 </div>
@@ -554,11 +558,20 @@ export const ProjectDetailView: React.FC<{
                   <RefreshCw
                     className={`w-3.5 h-3.5 ${isAnalyzingAi ? 'animate-spin' : ''}`}
                   />
-                  <span>{isAnalyzingAi ? 'Analyzing...' : 'Refresh Analysis'}</span>
+                  <span>
+                    {isAnalyzingAi ? 'Analyzing...' : aiAnalysis ? 'Refresh Analysis' : 'Analyze Risk'}
+                  </span>
                 </button>
               </div>
 
               <div className="p-5 space-y-4">
+                <div className="p-3 rounded bg-white border border-[#C7D2FE] flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-medium">
+                    Authoritative Backend Risk Status:
+                  </span>
+                  <RiskStatusBadge status={financials.risk_status} size="sm" />
+                </div>
+
                 {isAnalyzingAi ? (
                   <div
                     role="status"
@@ -567,62 +580,74 @@ export const ProjectDetailView: React.FC<{
                   >
                     <Loader2 className="w-6 h-6 text-[#3730A3] animate-spin mx-auto" />
                     <div className="text-xs font-medium text-[#1E1B4B]">
-                      Recalculating advisory interventions from latest project ledger...
+                      Asking the AI advisor to explain the current figures...
                     </div>
                   </div>
+                ) : aiError ? (
+                  <div
+                    role="alert"
+                    className="p-3 rounded bg-amber-50 border border-amber-200 text-xs text-amber-900"
+                  >
+                    {aiError}
+                  </div>
+                ) : !aiAnalysis ? (
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Get a plain-language explanation of this project's risk status and
+                    suggested next steps. The advisor sees only anonymized, aggregated
+                    figures and never changes them.
+                  </p>
                 ) : (
                   <>
-                    <div className="p-3 rounded bg-white border border-[#C7D2FE] flex items-center justify-between text-xs">
-                      <span className="text-slate-600 font-medium">
-                        Authoritative Backend Risk Status:
-                      </span>
-                      <RiskStatusBadge status={financials.risk_status} size="sm" />
-                    </div>
-
                     <div>
                       <h3 className="text-xs font-semibold text-[#1E1B4B] mb-1">
-                        Executive Risk Explanation
+                        Executive Summary
                       </h3>
                       <p className="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded border border-slate-200">
-                        {aiAnalysis.ai_summary}
+                        {aiAnalysis.ai_advisor.executive_summary}
                       </p>
                     </div>
 
                     <div>
                       <h3 className="text-xs font-semibold text-[#1E1B4B] mb-2">
-                        Recommended Interventions ({aiAnalysis.suggested_actions.length})
+                        Primary Risk Drivers
                       </h3>
-                      <div className="space-y-2.5">
-                        {aiAnalysis.suggested_actions.map((act, idx) => (
-                          <div
-                            key={act.id}
-                            className="p-3 rounded bg-white border border-slate-200 space-y-1"
+                      <ul className="space-y-1.5">
+                        {aiAnalysis.ai_advisor.primary_risk_drivers.map((driver, idx) => (
+                          <li
+                            key={idx}
+                            className="p-2.5 rounded bg-white border border-slate-200 text-xs text-slate-700"
                           >
-                            <div className="text-xs font-semibold text-slate-900">
-                              0{idx + 1}. {act.title}
-                            </div>
-                            <p className="text-xs text-slate-600">{act.rationale}</p>
-                            <div className="text-[11px] font-medium text-[#3730A3] pt-1">
-                              Est. Impact: {act.estimated_impact}
-                            </div>
-                          </div>
+                            {driver}
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     </div>
 
-                    {aiAnalysis.assumptions.length > 0 && (
+                    <div>
+                      <h3 className="text-xs font-semibold text-[#1E1B4B] mb-2">
+                        Recommended Interventions (
+                        {aiAnalysis.ai_advisor.actionable_recommendations.length})
+                      </h3>
+                      <ol className="space-y-2">
+                        {aiAnalysis.ai_advisor.actionable_recommendations.map((rec, idx) => (
+                          <li
+                            key={idx}
+                            className="p-3 rounded bg-white border border-slate-200 text-xs text-slate-700"
+                          >
+                            <span className="font-semibold text-slate-900">0{idx + 1}.</span> {rec}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+
+                    {aiAnalysis.ai_advisor.data_gaps_and_assumptions.length > 0 && (
                       <div className="p-3 rounded bg-white/80 border border-slate-200 text-[11px] text-slate-600 space-y-1">
                         <strong className="text-slate-800 block">
-                          Assumptions & Missing Data Notes:
+                          Data Gaps &amp; Assumptions:
                         </strong>
                         <ul className="list-disc list-inside space-y-0.5">
-                          {aiAnalysis.assumptions.map((a, i) => (
+                          {aiAnalysis.ai_advisor.data_gaps_and_assumptions.map((a, i) => (
                             <li key={i}>{a}</li>
-                          ))}
-                          {aiAnalysis.missing_data_warnings.map((w, i) => (
-                            <li key={`w-${i}`} className="text-amber-800 font-medium">
-                              {w}
-                            </li>
                           ))}
                         </ul>
                       </div>

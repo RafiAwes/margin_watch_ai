@@ -1,5 +1,4 @@
 import {
-  AiRiskAnalysis,
   AuthSession,
   Client,
   EnrichedProject,
@@ -14,7 +13,6 @@ import {
   UserRole,
 } from '../types/domain';
 import {
-  AI_ADVISOR_DATA,
   INITIAL_CLIENTS,
   INITIAL_EXPENSES,
   INITIAL_PROJECTS,
@@ -765,159 +763,6 @@ export function updateUserPassword(
   return {
     ok: false,
     error: 'Password changes are not available yet: the backend has no change-password endpoint.',
-  };
-}
-
-/**
- * Generates an up-to-date advisory analysis grounded in the current project financials
- */
-export function buildProjectAiRiskAnalysis(
-  project: EnrichedProject
-): AiRiskAnalysis {
-  const seeded = AI_ADVISOR_DATA[project.id];
-  const f = project.financials;
-
-  if (seeded && f.risk_status === seeded.deterministic_risk_status) {
-    return {
-      ...seeded,
-      deterministic_drivers: f.risk_reasons,
-    };
-  }
-
-  const c = project.currency;
-  const suggested_actions: AiRiskAnalysis['suggested_actions'] = [];
-
-  if (project.estimated_remaining_hours === null) {
-    suggested_actions.push({
-      id: `act_est_${project.id}`,
-      title: 'Capture Remaining Delivery Effort Estimate with Engineering Lead',
-      rationale: `Actual cost is ${formatCurrency(
-        f.actual_total_cost,
-        c
-      )} (${formatPercentage(
-        f.budget_consumed_pct
-      )} of budget), but remaining hours are currently null. Entering an estimate is required to compute final cost and margin.`,
-      estimated_impact:
-        'Restores full deterministic final cost and commercial margin forecasting.',
-      action_type: 'UPDATE_ESTIMATE',
-    });
-  }
-
-  if (f.pending_expense_amount > 0) {
-    suggested_actions.push({
-      id: `act_exp_${project.id}`,
-      title: `Review ${formatCurrency(
-        f.pending_expense_amount,
-        c
-      )} in Pending Expenses Before Milestone Close`,
-      rationale:
-        'Pending expenses are currently excluded from Actual Cost. Approving or rejecting them clarifies remaining labor budget.',
-      estimated_impact: `Resolves ${formatCurrency(
-        f.pending_expense_amount,
-        c
-      )} in unapproved cost exposure.`,
-      action_type: 'REVIEW_EXPENSES',
-    });
-  }
-
-  if (f.projected_cost_variance !== null && f.projected_cost_variance > 0) {
-    suggested_actions.push({
-      id: `act_scope_${project.id}`,
-      title: 'Negotiate Change Request or De-Scope Non-Critical Deliverables',
-      rationale: `At ${formatCurrency(
-        project.planned_hourly_cost,
-        c
-      )}/hr across ${formatHours(
-        project.estimated_remaining_hours
-      )} remaining, projected cost exceeds planned budget by +${formatCurrency(
-        f.projected_cost_variance,
-        c
-      )}.`,
-      estimated_impact: `Protects up to ${formatCurrency(
-        f.projected_cost_variance,
-        c
-      )} in commercial margin.`,
-      action_type: 'SCOPE_REVIEW',
-    });
-  }
-
-  if (suggested_actions.length < 2) {
-    suggested_actions.push({
-      id: `act_cadence_${project.id}`,
-      title: 'Maintain Weekly Remaining-Hours Re-Estimation Cadence',
-      rationale:
-        'Auditing logged hours against remaining effort every Friday prevents late-stage budget surprises.',
-      estimated_impact: `Preserves projected ${formatPercentage(
-        f.projected_margin_pct
-      )} margin.`,
-      action_type: 'RATE_AUDIT',
-    });
-  }
-
-  const ai_summary =
-    project.estimated_remaining_hours === null
-      ? `${project.name} has recorded ${formatHours(
-          f.actual_hours_logged
-        )} (${formatCurrency(
-          f.actual_labor_cost,
-          c
-        )} labor) and ${formatCurrency(
-          f.actual_expense_cost,
-          c
-        )} in approved expenses (${formatPercentage(
-          f.budget_consumed_pct
-        )} of the ${formatCurrency(
-          project.planned_cost_budget,
-          c
-        )} budget). Because estimated remaining hours are currently null, final cost and profit projections are withheld until a delivery estimate is entered.`
-      : `${project.name} has consumed ${formatPercentage(
-          f.budget_consumed_pct
-        )} of its ${formatCurrency(
-          project.planned_cost_budget,
-          c
-        )} planned budget (${formatCurrency(
-          f.actual_total_cost,
-          c
-        )} actual cost to date). Combining actual cost with ${formatHours(
-          project.estimated_remaining_hours
-        )} remaining at ${formatCurrency(
-          project.planned_hourly_cost,
-          c
-        )}/hr yields a projected final cost of ${formatCurrency(
-          f.projected_final_cost,
-          c
-        )} and a projected commercial margin of ${formatPercentage(
-          f.projected_margin_pct
-        )} (vs. ${formatPercentage(f.planned_margin_pct)} planned).`;
-
-  return {
-    project_id: project.id,
-    generated_at: new Date().toISOString(),
-    deterministic_risk_status: f.risk_status,
-    deterministic_drivers: f.risk_reasons,
-    ai_summary,
-    suggested_actions,
-    assumptions: [
-      `Includes ${formatCurrency(
-        f.actual_expense_cost,
-        c
-      )} in Approved expenses; excludes ${formatCurrency(
-        f.pending_expense_amount,
-        c
-      )} in Pending expenses.`,
-      project.estimated_remaining_hours !== null
-        ? `Values ${formatHours(
-            project.estimated_remaining_hours
-          )} remaining effort at the ${formatCurrency(
-            project.planned_hourly_cost,
-            c
-          )}/hr planned rate.`
-        : 'Forecast metrics are intentionally withheld while estimated_remaining_hours is null.',
-    ],
-    missing_data_warnings:
-      project.estimated_remaining_hours === null
-        ? ['Missing required forecast input: estimated_remaining_hours is null.']
-        : [],
   };
 }
 
