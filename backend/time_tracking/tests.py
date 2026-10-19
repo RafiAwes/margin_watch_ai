@@ -84,6 +84,18 @@ class TimeEntryModelTests(TestCase):
         self.assertEqual(entry.hourly_cost_snapshot, Decimal("65.0000"))
         self.assertEqual(entry.description, "Updated description")
 
+    def test_computed_cost_rounds_half_up(self):
+        # 1.33 h × $62.50 = $83.125 → $83.13 (financial-rules §4.1 ROUND_HALF_UP, not banker's rounding)
+        entry = TimeEntry.objects.create(
+            project=self.project,
+            user=self.developer,
+            work_date=self.today,
+            recorded_hours=Decimal("1.33"),
+            hourly_cost_snapshot=Decimal("62.5000"),
+            description="Half-cent rounding",
+        )
+        self.assertEqual(entry.computed_cost, Decimal("83.13"))
+
     def test_recorded_hours_boundary_validations(self):
         # 0.00 hours must fail
         with self.assertRaises(ValidationError):

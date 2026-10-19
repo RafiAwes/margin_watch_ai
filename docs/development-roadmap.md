@@ -124,7 +124,7 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
 * **Status:** Planned
 * **Objective:** Implement the pure, deterministic financial calculation service and dashboard summary endpoints.
 * **Tasks:**
-  1. Implement pure Python calculation service in `backend/finance/services.py` adhering to `docs/financial-rules.md`.
+  1. Implement pure Python calculation service in `backend/profitability/services.py` adhering to `docs/financial-rules.md`.
   2. Implement precedence-based deterministic risk status evaluator.
   3. Implement defensive checks against division by zero and null estimates.
   4. Expose `GET /api/v1/projects/{id}/financial-summary/` and `GET /api/v1/dashboard/summary/`.

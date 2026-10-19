@@ -1,6 +1,6 @@
 import uuid
 from datetime import timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
@@ -115,4 +115,4 @@ class TimeEntry(models.Model):
         """
         hours = self.recorded_hours or Decimal("0.00")
         rate = self.hourly_cost_snapshot or Decimal("0.0000")
-        return (hours * rate).quantize(Decimal("0.01"))
+        return (hours * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

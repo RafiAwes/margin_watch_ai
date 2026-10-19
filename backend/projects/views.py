@@ -18,6 +18,26 @@ from projects.serializers import (
 )
 
 
+def apply_project_filters(queryset, request):
+    """Shared project list filters: ?client_id=, ?status=, ?is_archived= (also used by profitability)."""
+    client_id = uuid_param(request, "client_id")
+    if client_id:
+        queryset = queryset.filter(client_id=client_id)
+
+    status_param = request.query_params.get("status")
+    if status_param:
+        queryset = queryset.filter(status=status_param.upper())
+
+    is_archived_param = request.query_params.get("is_archived")
+    if is_archived_param is not None:
+        if is_archived_param.lower() in ["true", "1"]:
+            queryset = queryset.filter(is_archived=True)
+        elif is_archived_param.lower() in ["false", "0"]:
+            queryset = queryset.filter(is_archived=False)
+
+    return queryset
+
+
 class ProjectViewSet(viewsets.ModelViewSet):
     """
     Core delivery project API.
@@ -55,23 +75,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 .select_related("client")
             )
 
-        # Filters
-        client_id = uuid_param(self.request, "client_id")
-        if client_id:
-            queryset = queryset.filter(client_id=client_id)
-
-        status_param = self.request.query_params.get("status")
-        if status_param:
-            queryset = queryset.filter(status=status_param.upper())
-
-        is_archived_param = self.request.query_params.get("is_archived")
-        if is_archived_param is not None:
-            if is_archived_param.lower() in ["true", "1"]:
-                queryset = queryset.filter(is_archived=True)
-            elif is_archived_param.lower() in ["false", "0"]:
-                queryset = queryset.filter(is_archived=False)
-
-        return queryset
+        return apply_project_filters(queryset, self.request)
 
     def destroy(self, request, *args, **kwargs):
         """Soft-archive project to protect financial audit history."""

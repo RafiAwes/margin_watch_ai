@@ -19,6 +19,8 @@ router.register(r"expenses", ExpenseViewSet, basename="expense")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/auth/", include("users.urls")),
+    # Before the router so /projects/financial-summaries/ is not read as a project id
+    path("api/v1/", include("profitability.urls")),
     path("api/v1/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),
 ]
