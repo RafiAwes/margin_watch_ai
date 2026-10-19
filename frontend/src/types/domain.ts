@@ -144,21 +144,20 @@ export interface Expense {
   reviewed_at: string | null;
 }
 
-export interface AiSuggestedAction {
-  id: string;
-  title: string;
-  rationale: string;
-  estimated_impact: string;
-  action_type: 'REVIEW_EXPENSES' | 'UPDATE_ESTIMATE' | 'SCOPE_REVIEW' | 'RATE_AUDIT';
+/** AI Risk Advisor reply (docs/ai-risk-advisor.md §3) — advisory only, never authoritative. */
+export interface AiAdvice {
+  executive_summary: string;
+  primary_risk_drivers: string[];
+  actionable_recommendations: string[];
+  data_gaps_and_assumptions: string[];
 }
 
+/** POST /api/v1/projects/{id}/ai-risk-analysis/ (docs/api-specification.md §8.1). */
 export interface AiRiskAnalysis {
   project_id: string;
+  deterministic_status: string;
+  ai_advisor: AiAdvice;
   generated_at: string;
-  deterministic_risk_status: ProjectRiskStatus;
-  deterministic_drivers: string[];
-  ai_summary: string;
-  suggested_actions: AiSuggestedAction[];
-  assumptions: string[];
-  missing_data_warnings: string[];
+  model: string;
+  cached: boolean;
 }

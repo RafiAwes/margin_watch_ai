@@ -57,7 +57,6 @@ import {
   persistTimeEntries,
   resetWorkspaceToDefaults,
   saveActiveSession,
-  buildProjectAiRiskAnalysis,
   signOutWithApi,
   syncUsersFromApi,
   syncClientsFromApi,
@@ -1787,8 +1786,6 @@ export default function App() {
                       const spotlightProject =
                         atRiskWatchlist[0] ?? enrichedProjects[0];
                       if (!spotlightProject) return null;
-                      const aiAnalysis =
-                        buildProjectAiRiskAnalysis(spotlightProject);
                       return (
                         <aside
                           aria-label="AI Risk Advisor Spotlight"
@@ -1798,7 +1795,7 @@ export default function App() {
                             <div className="space-y-1">
                               <div className="inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold text-[#6558D3]">
                                 <Sparkles className="w-3.5 h-3.5" />
-                                <span>AI RISK ADVISOR · SPOTLIGHT</span>
+                                <span>RISK SPOTLIGHT</span>
                               </div>
                               <h2 className="text-base font-semibold text-[#202633]">
                                 {spotlightProject.name}
@@ -1811,37 +1808,23 @@ export default function App() {
                           </div>
 
                           <div className="p-4 sm:p-5 space-y-4 text-xs">
-                            <p className="text-[#202633] leading-relaxed">
-                              {aiAnalysis.ai_summary}
-                            </p>
-
                             <div className="space-y-2">
                               <div className="text-[11px] font-mono font-semibold uppercase tracking-wider text-[#4E5666]">
-                                Suggested Interventions
+                                Deterministic Risk Drivers
                               </div>
-                              {aiAnalysis.suggested_actions
-                                .slice(0, 2)
-                                .map((act) => (
-                                  <div
-                                    key={act.id}
-                                    className="p-3 rounded-xl bg-[#F6F7F9] border border-[#E3E6ED] space-y-1"
-                                  >
-                                    <div className="font-semibold text-[#202633]">
-                                      {act.title}
-                                    </div>
-                                    <p className="text-[#4E5666] leading-relaxed">
-                                      {act.rationale}
-                                    </p>
-                                    <div className="text-[11px] font-mono text-[#047857] font-medium pt-0.5">
-                                      Impact: {act.estimated_impact}
-                                    </div>
-                                  </div>
-                                ))}
+                              {spotlightProject.financials.risk_reasons.map((reason, idx) => (
+                                <p
+                                  key={idx}
+                                  className="p-3 rounded-xl bg-[#F6F7F9] border border-[#E3E6ED] text-[#202633] leading-relaxed"
+                                >
+                                  {reason}
+                                </p>
+                              ))}
                             </div>
 
                             <div className="pt-2 border-t border-[#E3E6ED] flex items-center justify-between gap-2">
                               <span className="text-[11px] text-[#697386]">
-                                Grounded in authoritative backend figures
+                                AI explanation available on the project page
                               </span>
                               <button
                                 type="button"
@@ -1853,7 +1836,7 @@ export default function App() {
                                 }
                                 className="px-3 py-1.5 text-xs font-semibold text-white bg-[#6558D3] rounded-lg hover:bg-[#5346BF] transition-colors whitespace-nowrap"
                               >
-                                Full Advisor Analysis →
+                                Open AI Analysis →
                               </button>
                             </div>
                           </div>
