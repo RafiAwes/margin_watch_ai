@@ -41,7 +41,7 @@ MarginWatch enforces zero tolerance for financial calculation inaccuracies and d
 | **Project Assignment & Revocation** | Phase 3 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_assignments` |
 | **Time Entry & Snapshot Immutability** | Phase 4 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_time_entries` |
 | **Expense State Machine & Approval** | Phase 4 | **PLANNED** | Not yet run | `python manage.py test core.tests.test_expenses` |
-| **Financial Engine & Benchmark Scenarios** | Phase 5 | **PLANNED** | Not yet run | `python manage.py test finance.tests` |
+| **Financial Engine & Benchmark Scenarios** | Phase 6 | **VERIFIED** | 31 pure tests (no DB) + 6 selector + 13 API tests pass (Oct 19, 2026) | `python manage.py test profitability` (pure only: `profitability.tests.test_services`) |
 | **AI Risk Advisor Resilience & Fallback** | Phase 7 | **PLANNED** | Not yet run | `python manage.py test ai_advisor.tests` |
 
 ---

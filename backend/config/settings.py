@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "projects.apps.ProjectsConfig",
     "time_tracking.apps.TimeTrackingConfig",
     "expenses.apps.ExpensesConfig",
+    "profitability.apps.ProfitabilityConfig",
 ]
 
 MIDDLEWARE = [
@@ -213,3 +214,12 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
+
+# MarginWatch Financial Engine
+# docs/financial-rules.md §7.1 Rule 3: high budget-consumption warning heuristic (percent).
+# Set MARGINWATCH_CONSUMPTION_WARNING_PCT to an empty string to disable the warning.
+
+from decimal import Decimal
+
+_warning_pct = os.environ.get("MARGINWATCH_CONSUMPTION_WARNING_PCT", "80.00").strip()
+MARGINWATCH_CONSUMPTION_WARNING_PCT = Decimal(_warning_pct) if _warning_pct else None

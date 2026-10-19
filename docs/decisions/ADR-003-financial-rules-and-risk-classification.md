@@ -69,7 +69,7 @@ Projects are classified into four mutually exclusive statuses using the followin
 
 1. **Default Project Currency:** One ISO currency per project; no cross-currency blending.
 2. **Expected Remaining Expenses:** Defaults to `$0.00` in the MVP unless explicitly configured by a manager.
-3. **Warning Consumption Threshold:** Configured default of `80.0%`, adjustable per project or agency profile.
+3. **Warning Consumption Threshold:** Configured default of `80.0%`. In the MVP it is one agency-wide setting, `MARGINWATCH_CONSUMPTION_WARNING_PCT` (environment variable; empty disables the warning). A per-project override is deferred.
 
 ---
 

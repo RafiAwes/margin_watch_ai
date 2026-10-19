@@ -337,17 +337,24 @@ All error responses return an HTTP 4xx or 5xx status code with a uniform error e
 ## 7. Financial Summary & Dashboard Endpoints
 
 ### 7.1 Agency Dashboard Summary
-- **Endpoint:** `GET /api/v1/dashboard/summary/`
-- **Allowed Roles:** `MANAGER` strictly.
+- **Endpoint:** `GET /api/v1/dashboard/summary/?currency=USD`
+- **Allowed Roles:** `MANAGER` strictly (`403` for team members).
+- **Scope:** `ACTIVE`, non-archived projects in one currency (`?currency=`, default `USD`; never mixed, financial-rules §4.2). Projected totals and the aggregate margin cover forecastable projects only (known remaining hours).
 - **Success Response:** `200 OK`
   ```json
   {
+    "currency": "USD",
     "active_projects_count": 5,
     "total_contract_revenue": "185000.00",
     "total_planned_cost_budget": "115000.00",
     "total_actual_cost_to_date": "64200.00",
+    "portfolio_budget_consumption_percentage": "55.83",
     "projects_at_risk_count": 1,
     "projects_over_budget_count": 1,
+    "risk_counts": {"healthy": 2, "at_risk": 1, "over_budget": 1, "insufficient_data": 1},
+    "forecastable_projects_count": 4,
+    "total_projected_final_cost": "98400.00",
+    "aggregate_projected_margin_percentage": "38.50",
     "pending_expenses_count": 3,
     "pending_expenses_amount": "1450.00"
   }
@@ -355,8 +362,9 @@ All error responses return an HTTP 4xx or 5xx status code with a uniform error e
 
 ### 7.2 Project Financial Summary
 - **Endpoint:** `GET /api/v1/projects/{id}/financial-summary/`
-- **Allowed Roles:** `MANAGER` strictly.
+- **Allowed Roles:** `MANAGER` strictly (`403` for team members, including assigned ones; `404` for unknown ids).
 - **Purpose:** Authoritative real-time calculation of project financials and deterministic risk classification.
+- **Fields beyond the examples below:** `baselines.planned_profit` ($R - B$), `baselines.planned_margin_percentage`, `actuals.pending_expense_count`, `actuals.rejected_expense_cost` (informational, never in costs), `forecast.projected_cost_variance` ($C_{projected} - B$), `forecast.reason_unavailable` (`null` when the forecast exists), `risk.rule` (1–4, the precedence rule that decided the status) and `metadata` (`warning_threshold_percentage`, `assumptions`). `actuals.pending_expense_cost` is always present.
 
 #### Complete Forecast Data Scenario:
 ```json
@@ -433,6 +441,13 @@ All error responses return an HTTP 4xx or 5xx status code with a uniform error e
   }
 }
 ```
+
+### 7.3 Project Financial Summaries (collection)
+- **Endpoint:** `GET /api/v1/projects/financial-summaries/`
+- **Allowed Roles:** `MANAGER` strictly.
+- **Purpose:** The §7.2 object for many projects at once (dashboards, project lists) in a fixed number of queries.
+- **Query parameters:** same as `GET /api/v1/projects/` (`client_id`, `status`, `is_archived`, `search`, `ordering`) plus pagination (`page`, `page_size` ≤ 100).
+- **Success Response:** `200 OK` — §1.3 pagination envelope whose `results` are §7.2 objects.
 
 ---
 

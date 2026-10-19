@@ -57,6 +57,7 @@ $$C_{labor} = \sum_{i=1}^{N} \left( H_{entry, i} \times C_{entry, i} \right)$$
 - **Output:** Decimal monetary total $\ge 0.00$. If $N = 0$, $C_{labor} = 0.00$.
 - **Validation:** Reject negative hours or negative rate snapshots.
 - **Rule:** Uses the immutable snapshot stored at time entry creation; never uses the user's current profile rate.
+- **Rounding:** Each entry's cost $H_{entry} 	imes C_{entry}$ is rounded half-up to the cent before summing, so $C_{labor}$ always equals the sum of the per-entry costs shown in the time ledger (`TimeEntry.computed_cost`).
 
 ### 3.2 Actual Expense Cost ($C_{expense}$)
 Sum all approved expenses associated with the project:
@@ -130,6 +131,7 @@ $$M_{profit} = \begin{cases}
 - Binary floating-point math (`float` in Python or JavaScript) is strictly prohibited.
 - All calculations are performed in the backend using fixed-point decimals (`decimal.Decimal` in Python, `NUMERIC(12, 4)` in database storage).
 - Display and response totals are rounded half-up (`ROUND_HALF_UP`) to two decimal places (`0.01` currency units, `0.01%` percentage units).
+- Every money value is rounded to the cent when it is produced (labor, expenses, totals, forecasts), so displayed figures always add up. Percentages are rounded only for display; threshold comparisons use the exact ratio (e.g. 79.996% does **not** trigger the 80% warning even though it displays as `80.00%`).
 
 ### 4.2 Single-Currency Boundary
 - For the MVP, each project is bound to a single configured currency (e.g., `USD`, `EUR`, `GBP`).
@@ -223,6 +225,7 @@ flowchart TD
 - **Condition:** $C_{actual} > B$
 - **Semantic Meaning:** Actual funds spent to date have already breached the delivery-cost budget ceiling.
 - **Precedence Note:** This rule takes priority over missing forecasting data. If a project with a $6,000 budget has already burned $6,200, the project is definitively `over_budget` even if $H_{rem}$ is `null`. The overrun is an established historical fact.
+- **Zero/missing budget:** Rule 1 applies only when $B > 0$. A missing or zero budget is not a spending ceiling, so such a project is always `insufficient_data` (EC-01, TC-NUM-07).
 
 #### Rule 2 — `insufficient_data` (Second Priority)
 - **Condition:** $C_{actual} \le B$ AND ($B \le 0$ OR $B \text{ is null}$ OR $H_{rem} \text{ is null}$ OR $C_{hourly\_plan} \le 0$).
