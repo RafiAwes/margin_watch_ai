@@ -131,7 +131,7 @@ sequenceDiagram
 
 ## 6. Evaluation Framework (Benchmark Scenarios)
 
-Prior to releasing the AI feature in Phase 7, the AI Risk Advisor will be evaluated against **15 benchmark test scenarios** representing common operational agency realities.
+Prior to releasing the AI feature (Phase 8), the AI Risk Advisor is evaluated against **15 benchmark test scenarios** representing common operational agency realities.
 
 ### Evaluation Criteria (Scoring 1–5)
 1. **Numerical Faithfulness:** Did the AI accurately cite provided numbers without hallucinating unprovided metrics?
@@ -161,7 +161,17 @@ Prior to releasing the AI feature in Phase 7, the AI Risk Advisor will be evalua
 
 ---
 
-## 7. Known Limitations
+## 7. Implementation Notes (Phase 8, October 2026)
+
+- **Model:** `gemini-3.8-flash` by default (`GEMINI_MODEL`). The originally specified `gemini-2.5-flash` is no longer offered to new API users.
+- **SDK:** `google-genai` 2.x; one call per analysis, 10 s timeout, no automatic retries, JSON output constrained by the §3 schema, temperature 0.2.
+- **Context:** built from an allow-list (`ai_advisor/context.py`); the project is identified only as `PRJ-xxxxxxxx`.
+- **Grounding check:** a reply is rejected (`502 AI_RESPONSE_INVALID`) if it quotes a money figure, percentage or hour count that is not in the context (common display forms such as `$94,900` for `94900.00`, and the remaining budget / remaining buffer, are accepted).
+- **Caching:** results are cached for 24 h by a hash of the context and model; any change to the figures produces a fresh analysis.
+- **Evaluation:** `python manage.py evaluate_ai_advisor` runs the 15 scenarios above (synthetic inputs, no database) and writes `docs/evaluations/ai-advisor-<date>.md` with automatic checks and columns for manual 1–5 scoring. `--dry-run` builds the contexts without calling Gemini.
+- **Scenario 12 note:** per-person rates are deliberately not shared with the model, so it can only infer a higher burn rate from total labor cost vs. hours.
+
+## 8. Known Limitations
 
 - **No Predictive ML:** The AI does not predict future timesheet velocity using time-series forecasting. It synthesizes and explains the explicit estimates provided by human managers.
 - **Dependency on Estimate Quality:** If a manager enters unrealistic remaining hours (e.g., claiming 10 hours remain when 100 are needed), the AI advice will reflect that distorted reality, noting it as an unverified assumption.

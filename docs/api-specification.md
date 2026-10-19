@@ -482,6 +482,23 @@ All error responses return an HTTP 4xx or 5xx status code with a uniform error e
 
 ---
 
+### 8.2 Behaviour & Errors
+- **Allowed roles:** `MANAGER` only (`403` for team members, including assigned ones; `404` for unknown ids). `POST` only.
+- **Rate limit:** 10 requests/hour per user (`429`, code `THROTTLED`).
+- **Extra response fields:** `model` (the Gemini model used) and `cached` (`true` when identical figures were analysed within the last 24 h; no new model call is made).
+- **Read-only:** the endpoint never writes to the database.
+- **Error codes** (standard error envelope; every message ends with "Deterministic financials remain valid."):
+
+| HTTP | `error.code` | When |
+| :---: | :--- | :--- |
+| 503 | `AI_NOT_CONFIGURED` | `GEMINI_API_KEY` is not set on the server. |
+| 503 | `AI_TIMEOUT` | No reply within 10 seconds (`GEMINI_TIMEOUT_SECONDS`). |
+| 503 | `AI_QUOTA_EXCEEDED` | Provider returned HTTP 429. |
+| 503 | `AI_UNAVAILABLE` | Network/provider error, or the key/model was rejected. |
+| 502 | `AI_RESPONSE_INVALID` | Reply was not valid JSON, broke the schema, or quoted figures not present in the context (grounding check). |
+
+---
+
 ## 9. Unresolved API Contract Decisions
 
 The following contract decisions are explicitly flagged for stakeholder alignment:

@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "time_tracking.apps.TimeTrackingConfig",
     "expenses.apps.ExpensesConfig",
     "profitability.apps.ProfitabilityConfig",
+    "ai_advisor.apps.AiAdvisorConfig",
 ]
 
 MIDDLEWARE = [
@@ -195,6 +196,10 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "config.exceptions.api_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "config.pagination.StandardPagination",
     "PAGE_SIZE": 20,
+    # Scoped throttles only (no global default): docs/security-and-permissions.md §5.2
+    "DEFAULT_THROTTLE_RATES": {
+        "ai_advisor": os.environ.get("MARGINWATCH_AI_RATE", "10/hour"),
+    },
 }
 
 
@@ -223,3 +228,12 @@ from decimal import Decimal
 
 _warning_pct = os.environ.get("MARGINWATCH_CONSUMPTION_WARNING_PCT", "80.00").strip()
 MARGINWATCH_CONSUMPTION_WARNING_PCT = Decimal(_warning_pct) if _warning_pct else None
+
+
+# AI Risk Advisor (server-side only — these values never reach the browser)
+# docs/ai-risk-advisor.md, docs/plans/phase-08-ai-risk-advisor-plan.md §4.6
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+GEMINI_TIMEOUT_SECONDS = int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "10"))
+MARGINWATCH_AI_CACHE_SECONDS = int(os.environ.get("MARGINWATCH_AI_CACHE_SECONDS", str(24 * 60 * 60)))

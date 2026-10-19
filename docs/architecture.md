@@ -153,7 +153,7 @@ sequenceDiagram
         FinSvc-->>API: Verified metrics
         API->>AISvc: generate_risk_advice(metrics)
         AISvc->>AISvc: Strip PII & build structured prompt
-        AISvc->>Gemini: HTTPS POST /v1beta/models/gemini-2.5-flash:generateContent
+        AISvc->>Gemini: HTTPS POST generateContent (model from GEMINI_MODEL, default gemini-3.8-flash)
         alt Gemini Succeeds
             Gemini-->>AISvc: Returns structured JSON (drivers, recommendations)
             AISvc-->>API: Validated advisory payload
