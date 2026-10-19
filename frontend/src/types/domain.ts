@@ -10,7 +10,7 @@ export type ProjectRiskStatus = 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'INCOMPLETE
 
 export type ExpenseStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
-export type ExpenseCategory = 'INFRASTRUCTURE' | 'SOFTWARE' | 'CONTRACTOR' | 'TRAVEL' | 'OTHER';
+export type ExpenseCategory = 'SUBCONTRACTOR' | 'SOFTWARE_LICENSE' | 'HARDWARE' | 'TRAVEL' | 'OTHER';
 
 export type SimulationStateMode =
   | 'NORMAL'

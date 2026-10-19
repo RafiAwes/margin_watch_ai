@@ -618,6 +618,79 @@ export const apiClient = {
     },
   },
 
+  // Labor Time Entry Endpoints
+  timeEntries: {
+    async list(filters?: { project_id?: string; date_from?: string; date_to?: string }): Promise<any[]> {
+      const params = new URLSearchParams();
+      if (filters?.project_id) params.append('project_id', filters.project_id);
+      if (filters?.date_from) params.append('date_from', filters.date_from);
+      if (filters?.date_to) params.append('date_to', filters.date_to);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiClient.request<any[] | { results: any[] }>(`/time-entries/${qs}`);
+      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
+      return list;
+    },
+
+    async create(data: {
+      project_id: string;
+      work_date: string;
+      recorded_hours: number;
+      description: string;
+    }): Promise<any> {
+      return apiClient.request<any>('/time-entries/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    async delete(id: string): Promise<void> {
+      await apiClient.request<void>(`/time-entries/${id}/`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  // Direct Project Expense Endpoints
+  expenses: {
+    async list(filters?: { project_id?: string; status?: string }): Promise<any[]> {
+      const params = new URLSearchParams();
+      if (filters?.project_id) params.append('project_id', filters.project_id);
+      if (filters?.status) params.append('status', filters.status);
+
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiClient.request<any[] | { results: any[] }>(`/expenses/${qs}`);
+      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
+      return list;
+    },
+
+    async create(data: {
+      project_id: string;
+      category: string;
+      amount: number;
+      expense_date: string;
+      description: string;
+    }): Promise<any> {
+      return apiClient.request<any>('/expenses/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    async delete(id: string): Promise<void> {
+      await apiClient.request<void>(`/expenses/${id}/`, {
+        method: 'DELETE',
+      });
+    },
+
+    async review(id: string, action: 'APPROVE' | 'REJECT', reviewNote = ''): Promise<any> {
+      return apiClient.request<any>(`/expenses/${id}/review/`, {
+        method: 'POST',
+        body: JSON.stringify({ action, review_note: reviewNote }),
+      });
+    },
+  },
+
   /**
    * Health check to detect whether the Django backend server is running and reachable.
    */

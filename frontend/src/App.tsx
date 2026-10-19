@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertOctagon,
   Building2,
@@ -66,6 +66,13 @@ import {
   archiveClientWithApi,
   saveProjectWithApi,
   updateProjectEstimateWithApi,
+  syncTimeEntriesFromApi,
+  syncExpensesFromApi,
+  createTimeEntryWithApi,
+  deleteTimeEntryWithApi,
+  submitExpenseWithApi,
+  deleteExpenseWithApi,
+  reviewExpenseWithApi,
 } from './services/auth-and-store';
 import { onApiSessionExpired } from './services/api-client';
 import { AuthScreen } from './components/auth/AuthScreen';
@@ -171,8 +178,21 @@ export default function App() {
           setProjects(apiProjects);
         }
       });
+      syncTimeEntriesFromApi().then((apiEntries) => {
+        if (apiEntries) {
+          setTimeEntries(apiEntries);
+        }
+      });
+      syncExpensesFromApi().then((apiExpenses) => {
+        if (apiExpenses) {
+          setExpenses(apiExpenses);
+        }
+      });
     }
   }, [session]);
+
+  // Guards against duplicate financial records from repeated clicks while a request is in flight
+  const financialMutationInFlight = useRef(false);
 
   // Navigation & Route State
   const [route, setRoute] = useState<WorkspaceRoute>('DASHBOARD');
@@ -439,37 +459,41 @@ export default function App() {
     );
   };
 
+  // Runs a backend write for a time entry or expense; surfaces API errors as a toast
+  // and skips the call if another financial write is still in flight.
+  const runFinancialMutation = async (mutation: () => Promise<void>) => {
+    if (financialMutationInFlight.current) return;
+    financialMutationInFlight.current = true;
+    try {
+      await mutation();
+    } catch (err: any) {
+      triggerToast(err?.message || 'The server rejected this request.', 'ERROR');
+    } finally {
+      financialMutationInFlight.current = false;
+    }
+  };
+
   const handleCreateTimeEntry = (data: {
     project_id: string;
     work_date: string;
     hours: number;
     description: string;
-  }) => {
-    const newEntry: TimeEntry = {
-      id: `te_${Date.now()}`,
-      project_id: data.project_id,
-      user_id: currentUser.id,
-      user_name: currentUser.full_name,
-      work_date: data.work_date,
-      hours: data.hours,
-      description: data.description,
-      hourly_cost_snapshot: currentUser.default_hourly_cost,
-      computed_cost: Number(
-        (data.hours * currentUser.default_hourly_cost).toFixed(2)
-      ),
-      created_at: new Date().toISOString(),
-    };
-    setTimeEntries((prev) => [newEntry, ...prev]);
-    setIsLogTimeModalOpen(false);
-    triggerToast(
-      `Recorded ${data.hours.toFixed(2)} hrs on ${data.work_date}.`
-    );
-  };
+  }) =>
+    runFinancialMutation(async () => {
+      const newEntry = await createTimeEntryWithApi(data);
+      setTimeEntries((prev) => [newEntry, ...prev]);
+      setIsLogTimeModalOpen(false);
+      triggerToast(
+        `Recorded ${data.hours.toFixed(2)} hrs on ${data.work_date}.`
+      );
+    });
 
-  const handleDeleteTimeEntry = (timeEntryId: string) => {
-    setTimeEntries((prev) => prev.filter((t) => t.id !== timeEntryId));
-    triggerToast('Deleted time entry and updated project labor cost.');
-  };
+  const handleDeleteTimeEntry = (timeEntryId: string) =>
+    runFinancialMutation(async () => {
+      await deleteTimeEntryWithApi(timeEntryId);
+      setTimeEntries((prev) => prev.filter((t) => t.id !== timeEntryId));
+      triggerToast('Deleted time entry and updated project labor cost.');
+    });
 
   const handleSubmitExpense = (data: {
     project_id: string;
@@ -477,80 +501,52 @@ export default function App() {
     category: ExpenseCategory;
     amount: number;
     description: string;
-  }) => {
-    const newExpense: Expense = {
-      id: `exp_${Date.now()}`,
-      project_id: data.project_id,
-      submitted_by_id: currentUser.id,
-      submitted_by_name: currentUser.full_name,
-      expense_date: data.expense_date,
-      category: data.category,
-      amount: data.amount,
-      description: data.description,
-      status: 'PENDING',
-      rejection_reason: null,
-      reviewed_by_name: null,
-      reviewed_at: null,
-    };
-    setExpenses((prev) => [newExpense, ...prev]);
-    setIsSubmitExpenseModalOpen(false);
-    triggerToast(
-      `Submitted ${formatCurrency(
-        data.amount,
-        'USD'
-      )} expense for Manager approval.`
-    );
-  };
+  }) =>
+    runFinancialMutation(async () => {
+      const newExpense = await submitExpenseWithApi(data);
+      setExpenses((prev) => [newExpense, ...prev]);
+      setIsSubmitExpenseModalOpen(false);
+      triggerToast(
+        `Submitted ${formatCurrency(
+          data.amount,
+          'USD'
+        )} expense for Manager approval.`
+      );
+    });
 
-  const handleDeletePendingExpense = (expenseId: string) => {
-    setExpenses((prev) =>
-      prev.filter((e) => !(e.id === expenseId && e.status === 'PENDING'))
-    );
-    triggerToast('Withdrew pending expense submission.');
-  };
+  const handleDeletePendingExpense = (expenseId: string) =>
+    runFinancialMutation(async () => {
+      await deleteExpenseWithApi(expenseId);
+      setExpenses((prev) => prev.filter((e) => e.id !== expenseId));
+      triggerToast('Withdrew pending expense submission.');
+    });
 
   const handleApproveExpense = (expenseId: string) => {
     if (!isManager) return;
-    const target = expenses.find((e) => e.id === expenseId);
-    setExpenses((prev) =>
-      prev.map((e) =>
-        e.id === expenseId
-          ? {
-              ...e,
-              status: 'APPROVED',
-              reviewed_by_name: currentUser.full_name,
-              reviewed_at: '2026-10-17',
-            }
-          : e
-      )
-    );
-    if (target) {
+    return runFinancialMutation(async () => {
+      const reviewed = await reviewExpenseWithApi(expenseId, 'APPROVE');
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === expenseId ? reviewed : e))
+      );
       triggerToast(
         `Approved ${formatCurrency(
-          target.amount,
+          reviewed.amount,
           'USD'
         )} expense. Added to Actual Project Cost.`
       );
-    }
+    });
   };
 
   const handleConfirmRejectExpense = (expenseId: string, reason: string) => {
     if (!isManager) return;
-    setExpenses((prev) =>
-      prev.map((e) =>
-        e.id === expenseId
-          ? {
-              ...e,
-              status: 'REJECTED',
-              rejection_reason: reason,
-              reviewed_by_name: currentUser.full_name,
-              reviewed_at: '2026-10-17',
-            }
-          : e
-      )
-    );
-    setRejectingExpense(null);
-    triggerToast('Rejected expense with remediation feedback.');
+    return runFinancialMutation(async () => {
+      const reviewed = await reviewExpenseWithApi(expenseId, 'REJECT', reason);
+      setExpenses((prev) =>
+        prev.map((e) => (e.id === expenseId ? reviewed : e))
+      );
+      setRejectingExpense(null);
+      triggerToast('Rejected expense with remediation feedback.');
+    });
   };
 
   const handleSaveClient = async (data: {
