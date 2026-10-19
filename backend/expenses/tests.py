@@ -278,3 +278,78 @@ class ExpenseAPITests(TestCase):
             },
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_owner_can_delete_pending_expense(self):
+        expense = Expense.objects.create(
+            project=self.project,
+            user=self.assigned_dev,
+            category=ExpenseCategory.OTHER,
+            amount=Decimal("30.00"),
+            description="Duplicate submission",
+            expense_date=self.today,
+        )
+        self.client.force_authenticate(user=self.assigned_dev)
+        response = self.client.delete(f"/api/v1/expenses/{expense.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Expense.objects.filter(pk=expense.pk).exists())
+
+    def test_team_member_cannot_delete_another_users_expense(self):
+        expense = Expense.objects.create(
+            project=self.project,
+            user=self.assigned_dev,
+            category=ExpenseCategory.OTHER,
+            amount=Decimal("30.00"),
+            description="Team lunch",
+            expense_date=self.today,
+        )
+        self.client.force_authenticate(user=self.unassigned_dev)
+        response = self.client.delete(f"/api/v1/expenses/{expense.id}/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Expense.objects.filter(pk=expense.pk).exists())
+
+    def test_reviewed_expense_cannot_be_deleted_by_owner(self):
+        expense = Expense.objects.create(
+            project=self.project,
+            user=self.assigned_dev,
+            category=ExpenseCategory.SUBCONTRACTOR,
+            amount=Decimal("900.00"),
+            description="QA contractor",
+            expense_date=self.today,
+            status=ExpenseStatus.APPROVED,
+            reviewed_by=self.manager,
+            reviewed_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.assigned_dev)
+        response = self.client.delete(f"/api/v1/expenses/{expense.id}/")
+        self.assertEqual(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+        self.assertTrue(Expense.objects.filter(pk=expense.pk).exists())
+
+    def test_reviewed_expense_cannot_be_deleted_by_manager(self):
+        approved = Expense.objects.create(
+            project=self.project,
+            user=self.assigned_dev,
+            category=ExpenseCategory.HARDWARE,
+            amount=Decimal("250.00"),
+            description="Test devices",
+            expense_date=self.today,
+            status=ExpenseStatus.APPROVED,
+            reviewed_by=self.manager,
+            reviewed_at=timezone.now(),
+        )
+        rejected = Expense.objects.create(
+            project=self.project,
+            user=self.assigned_dev,
+            category=ExpenseCategory.TRAVEL,
+            amount=Decimal("400.00"),
+            description="Conference travel",
+            expense_date=self.today,
+            status=ExpenseStatus.REJECTED,
+            reviewed_by=self.manager,
+            reviewed_at=timezone.now(),
+            review_note="Outside contracted scope.",
+        )
+        self.client.force_authenticate(user=self.manager)
+        for expense in (approved, rejected):
+            response = self.client.delete(f"/api/v1/expenses/{expense.id}/")
+            self.assertEqual(response.status_code, status.HTTP_422_UNPROCESSABLE_ENTITY)
+            self.assertTrue(Expense.objects.filter(pk=expense.pk).exists())

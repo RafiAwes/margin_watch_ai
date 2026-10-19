@@ -56,6 +56,21 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete a PENDING expense.
+        Reviewed expenses (APPROVED or REJECTED) are part of the financial audit trail and cannot be deleted.
+        """
+        expense = self.get_object()
+
+        if expense.status in [ExpenseStatus.APPROVED, ExpenseStatus.REJECTED]:
+            return Response(
+                {"detail": _("Reviewed expenses (Approved or Rejected) cannot be deleted.")},
+                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        return super().destroy(request, *args, **kwargs)
+
     @action(
         detail=True,
         methods=["POST"],
