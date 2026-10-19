@@ -1,9 +1,13 @@
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 
+from config.query_params import uuid_param
 from users.models import User, UserRole
 from users.permissions import IsManager
 from projects.models import Project, ProjectAssignment
@@ -52,7 +56,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             )
 
         # Filters
-        client_id = self.request.query_params.get("client_id")
+        client_id = uuid_param(self.request, "client_id")
         if client_id:
             queryset = queryset.filter(client_id=client_id)
 
@@ -104,12 +108,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
         if request.method == "POST":
             user_id = request.data.get("user_id")
             if not user_id:
-                return Response(
-                    {"user_id": ["This field is required."]},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                raise ValidationError({"user_id": ["This field is required."]})
 
-            user = get_object_or_404(User, id=user_id, is_active=True)
+            try:
+                user = get_object_or_404(User, id=user_id, is_active=True)
+            except DjangoValidationError:
+                # Malformed UUID: treat like any other unknown user
+                raise Http404
 
             assignment, created = ProjectAssignment.objects.get_or_create(
                 project=project,
@@ -117,10 +122,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 defaults={"assigned_by": request.user, "is_active": True},
             )
             if not created and assignment.is_active:
-                return Response(
-                    {"detail": "User is already actively assigned to this project."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                raise ValidationError({"user_id": ["User is already actively assigned to this project."]})
 
             if not assignment.is_active:
                 assignment.is_active = True

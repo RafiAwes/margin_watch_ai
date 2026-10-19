@@ -216,7 +216,7 @@ class TimeEntryAPITests(TestCase):
             },
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("project_id", response.data)
+        self.assertIn("project_id", [d["field"] for d in response.data["error"]["details"]])
 
     def test_manager_sees_all_entries_with_rates_and_can_filter(self):
         # Create an entry by assigned_dev
