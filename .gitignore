@@ -1,140 +1,49 @@
-# ==============================================================================
-# MarginWatch - Root .gitignore
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# Environment Variables & Secrets
-# ------------------------------------------------------------------------------
+# Environment and secrets
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-*.env
-!*.env.example
+.env.*
+!.env.example
 
-# ------------------------------------------------------------------------------
-# Python & Django
-# ------------------------------------------------------------------------------
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environments
-venv/
 .venv/
+venv/
 env/
-ENV/
-env.bak/
-venv.bak/
 
-# Django local files & uploads
+# Django
 *.sqlite3
 *.sqlite3-journal
-*.db
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 media/
 staticfiles/
+local_settings.py
 
-# Testing & Coverage
-htmlcov/
-.tox/
-.nox/
+# Test and coverage output
 .coverage
 .coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
+htmlcov/
 .pytest_cache/
 
-# ------------------------------------------------------------------------------
-# Node.js & Next.js
-# ------------------------------------------------------------------------------
+# Node / Vite
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Next.js build output
-.next/
-out/
-
-# Production build artifacts
 dist/
-
-# TypeScript cache
 *.tsbuildinfo
-next-env.d.ts
+npm-debug.log*
 
-# Cypress / Playwright test artifacts
-/cypress/videos/
-/cypress/screenshots/
-/playwright-report/
-/test-results/
-
-# ------------------------------------------------------------------------------
-# Operating System & IDE Specific
-# ------------------------------------------------------------------------------
+# Editors and OS
+.idea/
+.vscode/
+*.swp
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 desktop.ini
 
-# IDEs
-.idea/
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.sublime-workspace
-*.sublime-project
-*.swp
-*.swo
-*~
-
-# Temporary & Log files
+# Logs and scratch
 *.log
 logs/
-temp/
 tmp/
+
+# Local tooling and private notes
 .neon
-
-# Private Project Context & Control Documents
-/PROJECT_CONTEXT.md
+.claude/
 PROJECT_CONTEXT.md
-
-
-PROJECT_CONTEXT.md
-.claude
-!frontend/src/lib/

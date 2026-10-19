@@ -1,5 +1,7 @@
 # MarginWatch Forms, Validation & Application States Specification
 
+> **Implementation note (October 2026):** this document is the original pre-implementation blueprint. The frontend that was actually built is a **Vite + React 19 + TypeScript + Tailwind CSS single-page app** (decision `DEC-002`) — it does not use Next.js, the App Router, Server Components, TanStack Query, React Hook Form or Zod. Server data is loaded through `src/services/api-client.ts`, lists are paged with `src/hooks/usePagedList.ts`, and all financial figures come from the backend engine. See [`frontend/README.md`](../../README.md) and the root [`README.md`](../../../README.md). Design-system, accessibility, financial and role rules in this document still apply.
+
 ## 1. State Ownership Architecture
 
 MarginWatch avoids global client state libraries (such as Redux or Zustand) by assigning every piece of state to the most appropriate, single-responsibility owner:

@@ -1,3 +1,4 @@
+from config.ordering import StableOrderingFilter
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -5,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 
 from config.query_params import uuid_param
@@ -48,7 +50,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     """
 
     serializer_class = ProjectSerializer
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [filters.SearchFilter, StableOrderingFilter]
     search_fields = ["name", "client__name", "description"]
     ordering_fields = ["name", "created_at", "updated_at", "deadline", "status"]
     ordering = ["-created_at"]
@@ -75,7 +77,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 .select_related("client")
             )
 
-        return apply_project_filters(queryset, self.request)
+        active_assignments = Prefetch(
+            "assignments",
+            queryset=ProjectAssignment.objects.filter(is_active=True).only("id", "project_id", "user_id"),
+            to_attr="active_assignments",
+        )
+        return apply_project_filters(queryset.prefetch_related(active_assignments), self.request)
 
     def destroy(self, request, *args, **kwargs):
         """Soft-archive project to protect financial audit history."""
@@ -90,9 +97,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # --------------------------------------------------------------------------
     # Sub-Resource Actions: Team Member Assignments
-    # --------------------------------------------------------------------------
     @action(
         detail=True,
         methods=["get", "post"],

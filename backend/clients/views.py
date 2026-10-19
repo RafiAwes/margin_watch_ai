@@ -1,8 +1,9 @@
+from config.ordering import StableOrderingFilter
 from rest_framework import viewsets, status, filters
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import ProtectedError
+from django.db.models import Count, ProtectedError
 
 from users.permissions import IsManager
 from clients.models import Client
@@ -17,13 +18,13 @@ class ClientViewSet(viewsets.ModelViewSet):
 
     serializer_class = ClientSerializer
     permission_classes = [IsAuthenticated, IsManager]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [filters.SearchFilter, StableOrderingFilter]
     search_fields = ["name", "contact_name", "contact_email"]
     ordering_fields = ["name", "created_at", "updated_at"]
     ordering = ["name"]
 
     def get_queryset(self):
-        queryset = Client.objects.all()
+        queryset = Client.objects.select_related("created_by").annotate(projects_total=Count("projects"))
         is_archived_param = self.request.query_params.get("is_archived")
         if is_archived_param is not None:
             if is_archived_param.lower() in ["true", "1"]:

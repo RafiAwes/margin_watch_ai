@@ -77,7 +77,6 @@ export interface Project {
   planned_cost_budget: number;
   planned_hourly_cost: number;
   /**
-   * CRITICAL DOMAIN RULE:
    * `null` means remaining hours are unknown/unestimated (NEVER coerce to 0).
    * `0` explicitly means all delivery work is finished and 0 hours remain.
    */

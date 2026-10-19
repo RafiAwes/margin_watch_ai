@@ -12,15 +12,11 @@ import {
   User,
   UserRole,
 } from '../types/domain';
-import {
-  INITIAL_CLIENTS,
-  INITIAL_EXPENSES,
-  INITIAL_PROJECTS,
-  INITIAL_TIME_ENTRIES,
-  TEAM_DIRECTORY,
-} from '../data/seed-data';
 import { formatCurrency, formatHours, formatPercentage } from '../lib/financial-engine';
 import { apiClient, ApiError } from './api-client';
+
+const INITIAL_CLIENTS: Client[] = [];
+const INITIAL_PROJECTS: Project[] = [];
 
 const STORAGE_KEYS = {
   USERS: 'marginwatch_users_v1',
@@ -163,8 +159,6 @@ export function saveActiveSession(session: AuthSession | null): void {
 export function loadWorkspaceData(): {
   clients: Client[];
   projects: Project[];
-  timeEntries: TimeEntry[];
-  expenses: Expense[];
 } {
   const dummyClientIds = new Set(['cli_01', 'cli_02', 'cli_03', 'cli_04']);
   const dummyProjectIds = new Set([
@@ -192,15 +186,21 @@ export function loadWorkspaceData(): {
     persistProjects(projects);
   }
 
-  return {
-    clients,
-    projects,
-    timeEntries: safeLoad<TimeEntry[]>(
-      STORAGE_KEYS.TIME_ENTRIES,
-      INITIAL_TIME_ENTRIES
-    ),
-    expenses: safeLoad<Expense[]>(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES),
-  };
+  return { clients, projects };
+}
+
+/**
+ * Time entries and expenses are no longer mirrored in localStorage (DEC-008): they are
+ * loaded per screen from the paginated API. Removes the copies earlier builds stored
+ * (several MB with realistic data volumes).
+ */
+export function purgeLegacyActivityCache(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.TIME_ENTRIES);
+    window.localStorage.removeItem(STORAGE_KEYS.EXPENSES);
+  } catch {
+    // ignore
+  }
 }
 
 export function persistClients(clients: Client[]): void {
@@ -211,32 +211,19 @@ export function persistProjects(projects: Project[]): void {
   safeSave(STORAGE_KEYS.PROJECTS, projects);
 }
 
-export function persistTimeEntries(timeEntries: TimeEntry[]): void {
-  safeSave(STORAGE_KEYS.TIME_ENTRIES, timeEntries);
-}
-
-export function persistExpenses(expenses: Expense[]): void {
-  safeSave(STORAGE_KEYS.EXPENSES, expenses);
-}
-
 export function resetWorkspaceToDefaults(): {
   users: StoredUserAccount[];
   clients: Client[];
   projects: Project[];
-  timeEntries: TimeEntry[];
-  expenses: Expense[];
 } {
   safeSave(STORAGE_KEYS.USERS, INITIAL_REGISTERED_ACCOUNTS);
   safeSave(STORAGE_KEYS.CLIENTS, INITIAL_CLIENTS);
   safeSave(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
-  safeSave(STORAGE_KEYS.TIME_ENTRIES, INITIAL_TIME_ENTRIES);
-  safeSave(STORAGE_KEYS.EXPENSES, INITIAL_EXPENSES);
+  purgeLegacyActivityCache();
   return {
     users: INITIAL_REGISTERED_ACCOUNTS,
     clients: INITIAL_CLIENTS,
     projects: INITIAL_PROJECTS,
-    timeEntries: INITIAL_TIME_ENTRIES,
-    expenses: INITIAL_EXPENSES,
   };
 }
 
@@ -373,125 +360,6 @@ export async function syncUsersFromApi(): Promise<StoredUserAccount[]> {
 }
 
 /**
- * Registers a new agency user authoritatively with the Django backend API
- * (/api/v1/auth/register/). Stores signed SimpleJWT tokens, activates session,
- * and updates local workspace state.
- */
-export async function registerNewUserWithApi(input: {
-  full_name: string;
-  email: string;
-  password: string;
-  role: UserRole;
-  title: string;
-  default_hourly_cost: number;
-  assign_to_active_projects?: boolean;
-}): Promise<
-  | {
-      ok: true;
-      session: AuthSession;
-      updatedUsers: StoredUserAccount[];
-      updatedProjects: Project[];
-    }
-  | {
-      ok: false;
-      field?: string;
-      errors?: Record<string, string>;
-      error: string;
-    }
-> {
-  const parts = input.full_name.trim().split(/\s+/);
-  const first_name = parts[0] || 'Agency';
-  const last_name = parts.slice(1).join(' ') || 'User';
-
-  try {
-    const regResult = await apiClient.auth.register({
-      email: input.email.trim().toLowerCase(),
-      password: input.password,
-      first_name,
-      last_name,
-      role: input.role,
-      default_hourly_cost_rate: input.default_hourly_cost,
-    });
-
-    // Ensure custom title is set on the user profile
-    if (input.title?.trim()) {
-      regResult.user.title = input.title.trim();
-      regResult.session.user.title = input.title.trim();
-    }
-
-    saveActiveSession(regResult.session);
-
-    // Sync directory from backend
-    let updatedUsers = loadStoredUsers();
-    try {
-      const apiUsers = await apiClient.users.list();
-      if (apiUsers && apiUsers.length > 0) {
-        const creds = loadKnownCredentials();
-        updatedUsers = apiUsers
-          .map((u) => {
-            const isNewlyRegistered = u.email.toLowerCase() === input.email.trim().toLowerCase();
-            return {
-              ...u,
-              title: isNewlyRegistered ? (input.title?.trim() || u.title) : u.title,
-              password: creds[u.email.toLowerCase()],
-            };
-          });
-        saveStoredUsers(updatedUsers);
-      }
-    } catch {
-      const newStored: StoredUserAccount = {
-        ...regResult.user,
-        title: input.title,
-      };
-      updatedUsers = [
-        ...updatedUsers.filter((u) => u.email.toLowerCase() !== input.email.trim().toLowerCase()),
-        newStored,
-      ];
-      saveStoredUsers(updatedUsers);
-    }
-
-    // Project access comes only from manager-created assignments on the backend
-    const updatedProjects = safeLoad<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
-
-    return {
-      ok: true,
-      session: regResult.session,
-      updatedUsers,
-      updatedProjects,
-    };
-  } catch (err: any) {
-    if (err instanceof ApiError && err.status > 0) {
-      const field = err.fieldErrors.email
-        ? 'email'
-        : err.fieldErrors.password
-        ? 'password'
-        : err.fieldErrors.default_hourly_cost_rate
-        ? 'default_hourly_cost'
-        : 'root';
-      const cleanError =
-        err.fieldErrors[field === 'default_hourly_cost' ? 'default_hourly_cost_rate' : field] || err.message || 'Registration failed.';
-      return {
-        ok: false,
-        field,
-        errors: err.fieldErrors,
-        error: cleanError,
-      };
-    }
-
-    const networkErrorMsg =
-      err?.status === 0 || err?.message?.includes('Network error')
-        ? 'Cannot connect to MarginWatch backend API at http://127.0.0.1:8000. Please ensure the Django backend is running.'
-        : err?.message || 'Registration failed.';
-
-    return {
-      ok: false,
-      field: 'root',
-      error: networkErrorMsg,
-    };
-  }
-}
-
-/**
  * Creates a new agency team member directly on the Django backend (POST /api/v1/users/)
  * using the authenticated Manager's credentials, without overwriting the manager's active session.
  */
@@ -520,12 +388,12 @@ export async function createMemberWithApi(input: {
   const parts = input.full_name.trim().split(/\s+/);
   const first_name = parts[0] || 'Agency';
   const last_name = parts.slice(1).join(' ') || 'Member';
-  const defaultPassword = input.password?.trim() || 'AgencyPassword123!';
+  const initialPassword = input.password ?? '';
 
   try {
     const createdAccount = await apiClient.users.create({
       email: input.email.trim().toLowerCase(),
-      password: defaultPassword,
+      password: initialPassword,
       first_name,
       last_name,
       role: input.role,
@@ -755,20 +623,34 @@ export async function updateUserProfileWithApi(
   return updateUserProfile(userId, updates);
 }
 
-export function updateUserPassword(
-  _userId: string,
-  _newPassword: string
-): { ok: false; error: string } {
-  // The backend exposes no change-password endpoint yet, so nothing can be changed here.
-  return {
-    ok: false,
-    error: 'Password changes are not available yet: the backend has no change-password endpoint.',
-  };
+/**
+ * Changes the signed-in user's password on the backend. The backend revokes all refresh
+ * tokens on success, so we sign in again with the new password to keep this session alive.
+ */
+export async function changePasswordWithApi(
+  email: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<{ ok: true; session: AuthSession } | { ok: false; field?: string; error: string }> {
+  try {
+    await apiClient.auth.changePassword(currentPassword, newPassword);
+  } catch (err: any) {
+    if (err instanceof ApiError) {
+      const field = err.fieldErrors.current_password
+        ? 'current_password'
+        : err.fieldErrors.new_password
+        ? 'new_password'
+        : undefined;
+      return { ok: false, field, error: (field && err.fieldErrors[field]) || err.message };
+    }
+    return { ok: false, error: err?.message || 'Could not change the password.' };
+  }
+  const login = await apiClient.auth.login(email, newPassword);
+  saveActiveSession(login.session);
+  return { ok: true, session: login.session };
 }
 
-// -----------------------------------------------------------------------------
 // Client & Project API Integration Helpers
-// -----------------------------------------------------------------------------
 
 export function transformBackendClientToClient(backendClient: any): Client {
   return {
@@ -984,12 +866,8 @@ export async function updateProjectEstimateWithApi(
   persistProjects(updated);
 }
 
-// -----------------------------------------------------------------------------
-// Time Entry & Expense API Integration Helpers
-// Financial records are written to the backend only: a failed request throws
-// instead of falling back to local persistence, so no unsaved costs appear in
-// the UI.
-// -----------------------------------------------------------------------------
+// Time entries and expenses: written to the backend only. A failed request throws
+// instead of falling back to local storage, so the UI never shows unsaved costs.
 
 export function transformBackendTimeEntryToTimeEntry(backendEntry: any): TimeEntry {
   // hourly_cost_snapshot and computed_cost are masked by the backend for TEAM_MEMBER requests
@@ -1027,28 +905,85 @@ export function transformBackendExpenseToExpense(backendExpense: any): Expense {
   };
 }
 
-export async function syncTimeEntriesFromApi(): Promise<TimeEntry[] | null> {
-  try {
-    const apiEntries = await apiClient.timeEntries.list();
-    const transformed = apiEntries.map(transformBackendTimeEntryToTimeEntry);
-    persistTimeEntries(transformed);
-    return transformed;
-  } catch (err) {
-    console.warn('Could not sync time entries from backend API:', err);
-    return null;
-  }
+export interface Page<T> {
+  count: number;
+  next: string | null;
+  results: T[];
 }
 
-export async function syncExpensesFromApi(): Promise<Expense[] | null> {
-  try {
-    const apiExpenses = await apiClient.expenses.list();
-    const transformed = apiExpenses.map(transformBackendExpenseToExpense);
-    persistExpenses(transformed);
-    return transformed;
-  } catch (err) {
-    console.warn('Could not sync expenses from backend API:', err);
-    return null;
+/** Query parameters for a page of a list endpoint; empty/undefined values are skipped. */
+export function pageParams(page: number, pageSize: number, filters: Record<string, string | undefined> = {}): URLSearchParams {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.append(key, value);
   }
+  return params;
+}
+
+export async function fetchTimeEntryPage(
+  page: number,
+  pageSize: number,
+  filters: Record<string, string | undefined> = {}
+): Promise<Page<TimeEntry>> {
+  const res = await apiClient.timeEntries.page(pageParams(page, pageSize, { ordering: '-work_date', ...filters }));
+  return { count: res.count, next: res.next, results: res.results.map(transformBackendTimeEntryToTimeEntry) };
+}
+
+export async function fetchExpensePage(
+  page: number,
+  pageSize: number,
+  filters: Record<string, string | undefined> = {}
+): Promise<Page<Expense>> {
+  const res = await apiClient.expenses.page(pageParams(page, pageSize, { ordering: '-expense_date', ...filters }));
+  return { count: res.count, next: res.next, results: res.results.map(transformBackendExpenseToExpense) };
+}
+
+export interface TimeEntrySummary {
+  count: number;
+  total_hours: number;
+  /** Managers only (wage confidentiality); null for team members. */
+  total_labor_cost: number | null;
+  hours_by_project: Record<string, number>;
+}
+
+export interface ExpenseSummary {
+  count: number;
+  by_status: Record<'PENDING' | 'APPROVED' | 'REJECTED', { count: number; amount: number }>;
+}
+
+export const EMPTY_TIME_ENTRY_SUMMARY: TimeEntrySummary = {
+  count: 0, total_hours: 0, total_labor_cost: null, hours_by_project: {},
+};
+
+export const EMPTY_EXPENSE_SUMMARY: ExpenseSummary = {
+  count: 0,
+  by_status: {
+    PENDING: { count: 0, amount: 0 },
+    APPROVED: { count: 0, amount: 0 },
+    REJECTED: { count: 0, amount: 0 },
+  },
+};
+
+export async function fetchTimeEntrySummary(filters: Record<string, string | undefined> = {}): Promise<TimeEntrySummary> {
+  const res = await apiClient.timeEntries.summary(pageParams(1, 1, filters));
+  const hours_by_project: Record<string, number> = {};
+  for (const row of res.by_project || []) hours_by_project[String(row.project_id)] = Number(row.hours);
+  return {
+    count: res.count,
+    total_hours: Number(res.total_hours),
+    total_labor_cost: res.total_labor_cost !== undefined ? Number(res.total_labor_cost) : null,
+    hours_by_project,
+  };
+}
+
+export async function fetchExpenseSummary(filters: Record<string, string | undefined> = {}): Promise<ExpenseSummary> {
+  const res = await apiClient.expenses.summary(pageParams(1, 1, filters));
+  const by_status = { ...EMPTY_EXPENSE_SUMMARY.by_status };
+  for (const status of ['PENDING', 'APPROVED', 'REJECTED'] as const) {
+    const row = res.by_status?.[status];
+    if (row) by_status[status] = { count: row.count, amount: Number(row.amount) };
+  }
+  return { count: res.count, by_status };
 }
 
 export async function createTimeEntryWithApi(data: {

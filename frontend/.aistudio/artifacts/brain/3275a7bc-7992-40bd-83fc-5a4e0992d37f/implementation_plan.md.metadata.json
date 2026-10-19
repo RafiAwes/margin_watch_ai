@@ -1,6 +1,0 @@
-{
-  "summary": "Implementation plan to upgrade both the MarginWatch frontend documentation suite (docs/frontend/*.md) and the live interactive application (src/*) to the Electric Indigo (#6558D3), Soft Cloud (#F6F7F9), and Midnight Slate (#202633) visual design system with Inter + JetBrains Mono typography, 12-16px card radii, subtle developer-tool aesthetics, and full 320px-1920px responsive specifications.",
-  "updatedAt": "2026-10-17T14:37:01.831763689Z",
-  "requestFeedback": true,
-  "userFacing": true
-}

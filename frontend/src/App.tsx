@@ -52,9 +52,7 @@ import {
   loadStoredUsers,
   loadWorkspaceData,
   persistClients,
-  persistExpenses,
   persistProjects,
-  persistTimeEntries,
   resetWorkspaceToDefaults,
   saveActiveSession,
   signOutWithApi,
@@ -65,8 +63,15 @@ import {
   archiveClientWithApi,
   saveProjectWithApi,
   updateProjectEstimateWithApi,
-  syncTimeEntriesFromApi,
-  syncExpensesFromApi,
+  fetchTimeEntryPage,
+  fetchExpensePage,
+  fetchTimeEntrySummary,
+  fetchExpenseSummary,
+  EMPTY_TIME_ENTRY_SUMMARY,
+  EMPTY_EXPENSE_SUMMARY,
+  purgeLegacyActivityCache,
+  TimeEntrySummary,
+  ExpenseSummary,
   createTimeEntryWithApi,
   deleteTimeEntryWithApi,
   submitExpenseWithApi,
@@ -74,6 +79,8 @@ import {
   reviewExpenseWithApi,
 } from './services/auth-and-store';
 import { onApiSessionExpired } from './services/api-client';
+import { usePagedList } from './hooks/usePagedList';
+import { LoadMoreFooter } from './components/shared/LoadMoreFooter';
 import {
   EMPTY_PORTFOLIO,
   UNAVAILABLE_FINANCIALS,
@@ -131,12 +138,11 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>(
     () => loadWorkspaceData().projects
   );
-  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>(
-    () => loadWorkspaceData().timeEntries
-  );
-  const [expenses, setExpenses] = useState<Expense[]>(
-    () => loadWorkspaceData().expenses
-  );
+  // Time entries and expenses are loaded per screen from the paginated API (DEC-008).
+  // Bumped after every successful write so open lists, summaries and financials refresh.
+  const [activityVersion, setActivityVersion] = useState(0);
+  const bumpActivity = () => setActivityVersion((v) => v + 1);
+  useEffect(() => purgeLegacyActivityCache(), []);
 
   // Sync changes to storage
   useEffect(() => {
@@ -146,14 +152,6 @@ export default function App() {
   useEffect(() => {
     persistProjects(projects);
   }, [projects]);
-
-  useEffect(() => {
-    persistTimeEntries(timeEntries);
-  }, [timeEntries]);
-
-  useEffect(() => {
-    persistExpenses(expenses);
-  }, [expenses]);
 
   // Subscribe to API session expiry notifications (unrecoverable 401s)
   useEffect(() => {
@@ -183,23 +181,13 @@ export default function App() {
           setProjects(apiProjects);
         }
       });
-      syncTimeEntriesFromApi().then((apiEntries) => {
-        if (apiEntries) {
-          setTimeEntries(apiEntries);
-        }
-      });
-      syncExpensesFromApi().then((apiExpenses) => {
-        if (apiExpenses) {
-          setExpenses(apiExpenses);
-        }
-      });
     }
   }, [session]);
 
   // Guards against duplicate financial records from repeated clicks while a request is in flight
   const financialMutationInFlight = useRef(false);
 
-  // Authoritative financials from the backend engine (managers only, financial-rules §7).
+  // Financial figures come from the backend engine (managers only).
   // Refetched shortly after any project, time-entry or expense change.
   const [financialsByProject, setFinancialsByProject] = useState<
     Record<string, ProjectFinancials>
@@ -228,7 +216,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [isManagerSession, projects, timeEntries, expenses]);
+  }, [isManagerSession, projects, activityVersion]);
 
   // Navigation & Route State
   const [route, setRoute] = useState<WorkspaceRoute>('DASHBOARD');
@@ -371,25 +359,76 @@ export default function App() {
     [clients, selectedClientId]
   );
 
-  const visibleTimeEntries = useMemo(() => {
-    if (!currentUser) return [];
-    const list =
-      currentUser.role === 'MANAGER'
-        ? timeEntries
-        : timeEntries.filter((t) => t.user_id === currentUser.id);
-    return [...list].sort((a, b) => b.work_date.localeCompare(a.work_date));
-  }, [timeEntries, currentUser]);
+  // Server-side scope: managers see everything, team members only their own records.
+  const [entrySummary, setEntrySummary] = useState<TimeEntrySummary>(EMPTY_TIME_ENTRY_SUMMARY);
+  const [expenseSummary, setExpenseSummary] = useState<ExpenseSummary>(EMPTY_EXPENSE_SUMMARY);
+  const [projectEntrySummary, setProjectEntrySummary] =
+    useState<TimeEntrySummary>(EMPTY_TIME_ENTRY_SUMMARY);
+  const [ownEntrySummary, setOwnEntrySummary] = useState<TimeEntrySummary>(EMPTY_TIME_ENTRY_SUMMARY);
+  const [ownExpenseSummary, setOwnExpenseSummary] = useState<ExpenseSummary>(EMPTY_EXPENSE_SUMMARY);
+  const signedInUserId = session?.user.id;
 
-  const visibleExpenses = useMemo(() => {
-    if (!currentUser) return [];
-    const list =
-      currentUser.role === 'MANAGER'
-        ? expenses
-        : expenses.filter((e) => e.submitted_by_id === currentUser.id);
-    return [...list].sort((a, b) =>
-      b.expense_date.localeCompare(a.expense_date)
-    );
-  }, [expenses, currentUser]);
+  useEffect(() => {
+    if (!signedInUserId) return;
+    fetchTimeEntrySummary().then(setEntrySummary).catch(() => setEntrySummary(EMPTY_TIME_ENTRY_SUMMARY));
+    fetchExpenseSummary().then(setExpenseSummary).catch(() => setExpenseSummary(EMPTY_EXPENSE_SUMMARY));
+  }, [signedInUserId, activityVersion]);
+
+  const inProjectDetail = route === 'PROJECT_DETAIL' && Boolean(selectedProjectId);
+  useEffect(() => {
+    if (!signedInUserId || !inProjectDetail) return;
+    fetchTimeEntrySummary({ project_id: selectedProjectId })
+      .then(setProjectEntrySummary)
+      .catch(() => setProjectEntrySummary(EMPTY_TIME_ENTRY_SUMMARY));
+  }, [signedInUserId, inProjectDetail, selectedProjectId, activityVersion]);
+
+  // Profile statistics are always the signed-in user's own records
+  const inProfile = route === 'SETTINGS';
+  useEffect(() => {
+    if (!signedInUserId || !inProfile) return;
+    fetchTimeEntrySummary({ user_id: signedInUserId }).then(setOwnEntrySummary).catch(() => {});
+    fetchExpenseSummary({ user_id: signedInUserId }).then(setOwnExpenseSummary).catch(() => {});
+  }, [signedInUserId, inProfile, activityVersion]);
+
+  const LEDGER_PAGE = 50;
+  const ledger = usePagedList(
+    (page) => fetchTimeEntryPage(page, LEDGER_PAGE),
+    [signedInUserId, activityVersion],
+    Boolean(signedInUserId) && route === 'TIME_ENTRIES'
+  );
+  const expenseList = usePagedList(
+    (page) =>
+      fetchExpensePage(page, LEDGER_PAGE, {
+        status: expenseStatusFilter === 'ALL' ? undefined : expenseStatusFilter,
+      }),
+    [signedInUserId, activityVersion, expenseStatusFilter],
+    Boolean(signedInUserId) && route === 'EXPENSES'
+  );
+  const pendingExpenses = usePagedList(
+    (page) => fetchExpensePage(page, 10, { status: 'PENDING' }),
+    [signedInUserId, activityVersion],
+    Boolean(signedInUserId) && route === 'DASHBOARD'
+  );
+  const recentExpenses = usePagedList(
+    (page) => fetchExpensePage(page, 5),
+    [signedInUserId, activityVersion],
+    Boolean(signedInUserId) && route === 'DASHBOARD'
+  );
+  const projectEntries = usePagedList(
+    (page) => fetchTimeEntryPage(page, LEDGER_PAGE, { project_id: selectedProjectId }),
+    [signedInUserId, selectedProjectId, activityVersion],
+    Boolean(signedInUserId) && inProjectDetail
+  );
+  const projectExpenses = usePagedList(
+    (page) => fetchExpensePage(page, LEDGER_PAGE, { project_id: selectedProjectId }),
+    [signedInUserId, selectedProjectId, activityVersion],
+    Boolean(signedInUserId) && inProjectDetail
+  );
+  const ownRecentEntries = usePagedList(
+    (page) => fetchTimeEntryPage(page, 4, { user_id: signedInUserId }),
+    [signedInUserId, activityVersion],
+    Boolean(signedInUserId) && inProfile
+  );
 
   // Auth Handlers
   const handleAuthSuccess = (
@@ -521,8 +560,8 @@ export default function App() {
     description: string;
   }) =>
     runFinancialMutation(async () => {
-      const newEntry = await createTimeEntryWithApi(data);
-      setTimeEntries((prev) => [newEntry, ...prev]);
+      await createTimeEntryWithApi(data);
+      bumpActivity();
       setIsLogTimeModalOpen(false);
       triggerToast(
         `Recorded ${data.hours.toFixed(2)} hrs on ${data.work_date}.`
@@ -532,7 +571,7 @@ export default function App() {
   const handleDeleteTimeEntry = (timeEntryId: string) =>
     runFinancialMutation(async () => {
       await deleteTimeEntryWithApi(timeEntryId);
-      setTimeEntries((prev) => prev.filter((t) => t.id !== timeEntryId));
+      bumpActivity();
       triggerToast('Deleted time entry and updated project labor cost.');
     });
 
@@ -544,8 +583,8 @@ export default function App() {
     description: string;
   }) =>
     runFinancialMutation(async () => {
-      const newExpense = await submitExpenseWithApi(data);
-      setExpenses((prev) => [newExpense, ...prev]);
+      await submitExpenseWithApi(data);
+      bumpActivity();
       setIsSubmitExpenseModalOpen(false);
       triggerToast(
         `Submitted ${formatCurrency(
@@ -558,7 +597,7 @@ export default function App() {
   const handleDeletePendingExpense = (expenseId: string) =>
     runFinancialMutation(async () => {
       await deleteExpenseWithApi(expenseId);
-      setExpenses((prev) => prev.filter((e) => e.id !== expenseId));
+      bumpActivity();
       triggerToast('Withdrew pending expense submission.');
     });
 
@@ -566,9 +605,7 @@ export default function App() {
     if (!isManager) return;
     return runFinancialMutation(async () => {
       const reviewed = await reviewExpenseWithApi(expenseId, 'APPROVE');
-      setExpenses((prev) =>
-        prev.map((e) => (e.id === expenseId ? reviewed : e))
-      );
+      bumpActivity();
       triggerToast(
         `Approved ${formatCurrency(
           reviewed.amount,
@@ -581,10 +618,8 @@ export default function App() {
   const handleConfirmRejectExpense = (expenseId: string, reason: string) => {
     if (!isManager) return;
     return runFinancialMutation(async () => {
-      const reviewed = await reviewExpenseWithApi(expenseId, 'REJECT', reason);
-      setExpenses((prev) =>
-        prev.map((e) => (e.id === expenseId ? reviewed : e))
-      );
+      await reviewExpenseWithApi(expenseId, 'REJECT', reason);
+      bumpActivity();
       setRejectingExpense(null);
       triggerToast('Rejected expense with remediation feedback.');
     });
@@ -976,7 +1011,7 @@ export default function App() {
                   </span>
                 </span>
                 <span className="font-mono-tabular text-[11px] text-[#697386] shrink-0">
-                  {visibleTimeEntries.length}
+                  {entrySummary.count.toLocaleString()}
                 </span>
               </button>
 
@@ -1001,7 +1036,9 @@ export default function App() {
                   </span>
                 ) : (
                   <span className="font-mono-tabular text-[11px] text-[#697386] shrink-0">
-                    {visibleExpenses.length}
+                    {isManager
+                      ? expenseSummary.by_status.PENDING.count
+                      : expenseSummary.count}
                   </span>
                 )}
               </button>
@@ -1235,7 +1272,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ==================== 1. DASHBOARD ROUTE (/dashboard) ==================== */}
+          {/* Dashboard */}
           {route === 'DASHBOARD' && (
             <div className="space-y-6">
               <div className="bg-white border border-[#E3E6ED] rounded-2xl p-4 sm:p-5 bg-dev-grid flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-2xs">
@@ -1425,7 +1462,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Primary Decision Split: Project Health & Needs-Attention Panel (8 cols) + Pending Approvals Queue (4 cols) */}
+                  {/* Watchlist and pending approvals */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     <div className="lg:col-span-8 bg-white border border-[#E3E6ED] rounded-2xl overflow-hidden shadow-2xs">
                       <div className="p-4 sm:p-5 border-b border-[#E3E6ED] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1705,15 +1742,12 @@ export default function App() {
                       </div>
 
                       <div className="divide-y divide-[#E3E6ED]">
-                        {expenses.filter((e) => e.status === 'PENDING').length ===
-                        0 ? (
+                        {pendingExpenses.count === 0 ? (
                           <div className="p-6 text-center text-xs text-[#4E5666]">
                             All submitted expenses have been reviewed.
                           </div>
                         ) : (
-                          expenses
-                            .filter((e) => e.status === 'PENDING')
-                            .map((exp) => {
+                          pendingExpenses.items.map((exp) => {
                               const proj = enrichedProjects.find(
                                 (p) => p.id === exp.project_id
                               );
@@ -1766,7 +1800,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Secondary Decision Split: Budget vs. Forecast Chart (7 cols) + AI Risk Advisor Assistant Panel (5 cols) */}
+                  {/* Budget chart and risk spotlight */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     <div className="lg:col-span-7 min-w-0">
                       <BudgetForecastChart
@@ -1781,7 +1815,7 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Distinct, Supportive AI Risk Advisor Assistant Panel */}
+                    {/* Risk spotlight */}
                     {(() => {
                       const spotlightProject =
                         atRiskWatchlist[0] ?? enrichedProjects[0];
@@ -1870,12 +1904,10 @@ export default function App() {
                         Your Total Logged Hours
                       </span>
                       <div className="text-2xl font-bold font-mono-tabular text-slate-900 mt-1">
-                        {formatHours(
-                          visibleTimeEntries.reduce((sum, t) => sum + t.hours, 0)
-                        )}
+                        {formatHours(entrySummary.total_hours)}
                       </div>
                       <span className="text-xs text-slate-500">
-                        Across {visibleTimeEntries.length} recorded entries
+                        Across {entrySummary.count.toLocaleString()} recorded entries
                       </span>
                     </div>
 
@@ -1884,17 +1916,9 @@ export default function App() {
                         Your Pending Expense Submissions
                       </span>
                       <div className="text-2xl font-bold font-mono-tabular text-amber-800 mt-1">
-                        {
-                          visibleExpenses.filter((e) => e.status === 'PENDING')
-                            .length
-                        }{' '}
+                        {expenseSummary.by_status.PENDING.count}{' '}
                         (
-                        {formatCurrency(
-                          visibleExpenses
-                            .filter((e) => e.status === 'PENDING')
-                            .reduce((s, e) => s + e.amount, 0),
-                          'USD'
-                        )}
+                        {formatCurrency(expenseSummary.by_status.PENDING.amount, 'USD')}
                         )
                       </div>
                       <span className="text-xs text-slate-500">
@@ -1921,9 +1945,7 @@ export default function App() {
                           </div>
                         ) : (
                           visibleProjects.map((proj) => {
-                            const myHours = visibleTimeEntries
-                              .filter((t) => t.project_id === proj.id)
-                              .reduce((s, t) => s + t.hours, 0);
+                            const myHours = entrySummary.hours_by_project[proj.id] ?? 0;
                             return (
                               <div
                                 key={proj.id}
@@ -1994,12 +2016,12 @@ export default function App() {
                         </button>
                       </div>
                       <div className="divide-y divide-slate-200">
-                        {visibleExpenses.length === 0 ? (
+                        {recentExpenses.count === 0 ? (
                           <div className="p-6 text-center text-xs text-slate-600">
                             You have not submitted any expenses yet.
                           </div>
                         ) : (
-                          visibleExpenses.slice(0, 5).map((exp) => {
+                          recentExpenses.items.map((exp) => {
                             const proj = enrichedProjects.find(
                               (p) => p.id === exp.project_id
                             );
@@ -2039,7 +2061,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ==================== 2. PROJECTS LIST ROUTE (/projects) ==================== */}
+          {/* Projects list */}
           {route === 'PROJECTS' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2384,14 +2406,39 @@ export default function App() {
             </div>
           )}
 
-          {/* ==================== 3. PROJECT DETAIL ROUTE (/projects/[id]) ==================== */}
+          {/* Project detail */}
           {route === 'PROJECT_DETAIL' && (
             selectedProject ? (
               <ProjectDetailView
                 project={selectedProject}
                 currentUser={currentUser}
-                timeEntries={timeEntries}
-                expenses={expenses}
+                timeEntries={projectEntries.items}
+                expenses={projectExpenses.items}
+                timeEntriesTotal={projectEntries.count}
+                expensesTotal={projectExpenses.count}
+                loggedHours={projectEntrySummary.total_hours}
+                timeEntriesFooter={
+                  <LoadMoreFooter
+                    shown={projectEntries.items.length}
+                    total={projectEntries.count}
+                    hasMore={projectEntries.hasMore}
+                    loading={projectEntries.loading}
+                    error={projectEntries.error}
+                    onLoadMore={projectEntries.loadMore}
+                    noun="time entries"
+                  />
+                }
+                expensesFooter={
+                  <LoadMoreFooter
+                    shown={projectExpenses.items.length}
+                    total={projectExpenses.count}
+                    hasMore={projectExpenses.hasMore}
+                    loading={projectExpenses.loading}
+                    error={projectExpenses.error}
+                    onLoadMore={projectExpenses.loadMore}
+                    noun="expenses"
+                  />
+                }
                 initialTab={projectDetailTab}
                 onBack={() => setRoute('PROJECTS')}
                 onEditProject={(proj) =>
@@ -2435,7 +2482,7 @@ export default function App() {
             )
           )}
 
-          {/* ==================== 4. TIME ENTRIES ROUTE (/time-entries) ==================== */}
+          {/* Time ledger */}
           {route === 'TIME_ENTRIES' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2488,7 +2535,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-xs">
-                      {visibleTimeEntries.map((entry) => {
+                      {ledger.items.map((entry) => {
                         const proj = enrichedProjects.find(
                           (p) => p.id === entry.project_id
                         );
@@ -2557,11 +2604,20 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                <LoadMoreFooter
+                  shown={ledger.items.length}
+                  total={ledger.count}
+                  hasMore={ledger.hasMore}
+                  loading={ledger.loading}
+                  error={ledger.error}
+                  onLoadMore={ledger.loadMore}
+                  noun="time entries"
+                />
               </div>
             </div>
           )}
 
-          {/* ==================== 5. CLIENTS DIRECTORY (/clients) ==================== */}
+          {/* Clients */}
           {route === 'CLIENTS' && (
             <div className="space-y-6">
               {!isManager ? (
@@ -2751,7 +2807,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ==================== 6. CLIENT DETAIL (/clients/[id]) ==================== */}
+          {/* Client detail */}
           {route === 'CLIENT_DETAIL' && isManager && (
             selectedClient ? (
             <div className="space-y-6">
@@ -2918,7 +2974,7 @@ export default function App() {
           )
         )}
 
-          {/* ==================== 7. GLOBAL EXPENSES ROUTE (/expenses) ==================== */}
+          {/* Expenses */}
           {route === 'EXPENSES' && (
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2987,13 +3043,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 text-xs">
-                      {visibleExpenses
-                        .filter((e) =>
-                          expenseStatusFilter === 'ALL'
-                            ? true
-                            : e.status === expenseStatusFilter
-                        )
-                        .map((exp) => {
+                      {expenseList.items.map((exp) => {
                           const proj = enrichedProjects.find(
                             (p) => p.id === exp.project_id
                           );
@@ -3088,19 +3138,34 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                <LoadMoreFooter
+                  shown={expenseList.items.length}
+                  total={expenseList.count}
+                  hasMore={expenseList.hasMore}
+                  loading={expenseList.loading}
+                  error={expenseList.error}
+                  onLoadMore={expenseList.loadMore}
+                  noun="expenses"
+                />
               </div>
             </div>
           )}
 
-          {/* ==================== 8. USER PROFILE, SECURITY & TEAM GOVERNANCE (/settings) ==================== */}
+          {/* Profile, security and team */}
           {route === 'SETTINGS' && session && (
             <UserProfileView
               key={`${session.user.id}-${profileTab}`}
               session={session}
               registeredUsers={registeredUsers}
               assignedProjects={visibleProjects}
-              timeEntries={timeEntries}
-              expenses={expenses}
+              timeEntries={ownRecentEntries.items}
+              activity={{
+                entries: ownEntrySummary.count,
+                hours: ownEntrySummary.total_hours,
+                laborCost: ownEntrySummary.total_labor_cost ?? 0,
+                approvedExpenses: ownExpenseSummary.by_status.APPROVED.amount,
+                pendingExpenses: ownExpenseSummary.by_status.PENDING.amount,
+              }}
               initialTab={profileTab}
               onProfileUpdated={(updatedSession, updatedUsers, message) => {
                 setSession(updatedSession);
@@ -3123,8 +3188,6 @@ export default function App() {
                 setRegisteredUsers(defaults.users);
                 setClients(defaults.clients);
                 setProjects(defaults.projects);
-                setTimeEntries(defaults.timeEntries);
-                setExpenses(defaults.expenses);
                 triggerToast('Reset agency dataset to default seed state.');
               }}
             />
@@ -3193,7 +3256,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ==================== WORKFLOW MODALS ==================== */}
+      {/* Modals */}
       {projectModalState.open && isManager && (
         <ProjectFormModal
           initialProject={projectModalState.editingProject}

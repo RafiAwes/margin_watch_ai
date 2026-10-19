@@ -6,6 +6,12 @@
 **Architecture Authority:** [ADR-001: Initial Architecture](decisions/ADR-001-initial-architecture.md) | [ADR-002: Single-Agency Architecture](decisions/ADR-002-single-agency-architecture.md)  
 **Financial Rules Authority:** [docs/financial-rules.md](financial-rules.md) | [ADR-003: Financial Rules](decisions/ADR-003-financial-rules-and-risk-classification.md)
 
+
+> **Status note (October 2026):** this is the original Phase 0 roadmap. Implementation followed it
+> with two changes: the frontend is a **Vite + React 19 SPA** rather than Next.js (`DEC-002`), and the
+> database is PostgreSQL on Neon from the start. Current status lives in the root `README.md`;
+> detailed plans for the financial engine and AI advisor are in `docs/plans/`.
+
 ---
 
 ## 1. Roadmap Architecture & Execution Philosophy
@@ -52,11 +58,11 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
 
 ### Phase 1: Repository, Framework & Database Initialization
 * **Status:** Planned / Scaffolded
-* **Objective:** Initialize clean Django and Next.js projects with cloud Neon PostgreSQL / local SQLite database wiring.
+* **Objective:** Initialize clean Django and frontend projects (implemented as Vite + React) with cloud Neon PostgreSQL / local SQLite database wiring.
 * **Tasks:**
   1. Activate Python 3.15 environment (`projectfinance`) and install Django, DRF, `psycopg`, and `django-cors-headers`.
   2. Configure `backend/config/settings.py` with environment variable loading via `python-dotenv` and database connection via `dj-database-url`.
-  3. Initialize Next.js project with TypeScript and Tailwind CSS inside `frontend/`.
+  3. Initialize the frontend project with TypeScript and Tailwind CSS inside `frontend/` (implemented with Vite + React 19).
   4. Verify cross-origin connectivity with a basic health-check endpoint (`GET /api/v1/health/`).
 * **Deliverables:** Runnable backend and frontend skeletons verifying basic local communications.
 * **Definition of Done:** `manage.py check` passes cleanly; database connects; CORS is operational.
@@ -136,7 +142,7 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
 
 ### Phase 6: Frontend Integration & Essential Workflows
 * **Status:** Planned
-* **Objective:** Build the responsive Next.js web application connecting to the backend API.
+* **Objective:** Build the responsive web application (Vite + React SPA) connecting to the backend API.
 * **Tasks:**
   1. Build layout, authentication forms (Login), and role-based client routing.
   2. Build Manager Dashboard displaying aggregate portfolio metrics and at-risk project alerts.
@@ -144,7 +150,7 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
   4. Build Time Entry logging form and member timesheet view.
   5. Build Expense submission form and Manager Expense Review interface.
   6. Implement loading skeletons, empty states, and user-friendly error banners.
-* **Deliverables:** Complete Next.js frontend integrated with Django backend.
+* **Deliverables:** Complete React SPA frontend integrated with Django backend.
 * **Definition of Done:** User can log in, log time, approve expenses, and see immediate budget updates in the browser without manual page refreshes.
 
 ---
@@ -170,7 +176,7 @@ This roadmap organizes the development of MarginWatch into **10 disciplined mile
 * **Objective:** Perform end-to-end security audits, mobile responsive testing, and regression verification.
 * **Tasks:**
   1. Review CORS, CSRF, and HTTP headers.
-  2. Audit client bundles to ensure zero secret leakage (`NEXT_PUBLIC_` audit).
+  2. Audit client bundles to ensure zero secret leakage (`VITE_*` variable audit).
   3. Test interface responsiveness across mobile, tablet, and desktop breakpoints.
   4. Run complete backend and frontend test suites.
 * **Deliverables:** Hardened, fully responsive web application with zero security regressions.

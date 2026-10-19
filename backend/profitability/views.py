@@ -1,5 +1,6 @@
 import uuid
 
+from config.ordering import StableOrderingFilter
 from rest_framework import filters, generics
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -44,7 +45,7 @@ class ProjectFinancialSummaryListView(generics.GenericAPIView):
     """
 
     permission_classes = [IsAuthenticated, IsManager]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [filters.SearchFilter, StableOrderingFilter]
     search_fields = ["name", "client__name", "description"]
     ordering_fields = ["name", "created_at", "updated_at", "deadline", "status"]
     ordering = ["-created_at"]

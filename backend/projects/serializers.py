@@ -139,6 +139,10 @@ class ProjectSerializer(serializers.ModelSerializer):
         ]
 
     def get_assigned_member_ids(self, obj):
+        # Prefetched by ProjectViewSet.get_queryset to avoid one query per project
+        prefetched = getattr(obj, "active_assignments", None)
+        if prefetched is not None:
+            return [a.user_id for a in prefetched]
         return list(
             obj.assignments.filter(is_active=True).values_list("user_id", flat=True)
         )
@@ -185,8 +189,7 @@ class ProjectSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get("request")
 
-        # CONFIDENTIAL FINANCIAL DATA MASKING:
-        # If requesting user is TEAM_MEMBER, confidential financial baselines must be stripped
+        # Team members never see contract or budget figures
         if request and getattr(request.user, "role", None) == UserRole.TEAM_MEMBER:
             data.pop("contract_revenue", None)
             data.pop("planned_cost_budget", None)

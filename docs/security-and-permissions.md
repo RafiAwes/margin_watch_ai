@@ -12,7 +12,7 @@
 
 > [!CAUTION]
 > **Core Architectural Security Law:**  
-> The client-side application (Next.js frontend) must **NEVER** be treated as the authority for user identity, role assignment, project permissions, business validation, or financial calculations.  
+> The client-side application (React SPA) must **NEVER** be treated as the authority for user identity, role assignment, project permissions, business validation, or financial calculations.  
 > Hiding or disabling UI controls is a usability feature, **not an authorization mechanism**. Every security boundary, authorization check, and mathematical computation must be enforced server-side on every single request.
 
 ### Single-Agency Scope & Boundary
@@ -131,12 +131,12 @@ Sensitive financial attributes are stripped dynamically based on `request.user`:
 │    - DATABASE_URL / DATABASE_URL_UNPOOLED                   │
 │    - GEMINI_API_KEY  <-- NEVER EXPOSED TO BROWSER           │
 │                                                             │
-│  CLIENT-SIDE (Publicly Inlined by Next.js):                 │
-│    - NEXT_PUBLIC_API_BASE_URL (URL only)                   │
+│  CLIENT-SIDE (Publicly Inlined by Vite):                    │
+│    - VITE_API_BASE_URL (URL only, optional)                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-1. **Strict Key Encapsulation:** The Google Gemini API key resides exclusively in the Django backend environment. It is never prefixed with `NEXT_PUBLIC_` and never transmitted across the wire to the frontend client.
+1. **Strict Key Encapsulation:** The Google Gemini API key resides exclusively in the Django backend environment. It is never prefixed with `VITE_` (which would inline it into the browser bundle) and never transmitted across the wire to the frontend client.
 2. **Secret Rotation Protocol:** If an API key or database credential is leaked, it must be invalidated immediately via the provider console, rotated in deployment environments, and Git history scrubbed using `git-filter-repo`.
 
 ---

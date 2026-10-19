@@ -1,39 +1,47 @@
-# MarginWatch — Project Profitability & Budget Watchdog
+# MarginWatch — Frontend
 
-**MarginWatch** is a B2B financial SaaS application designed for small-to-midsize software agencies to monitor client project delivery costs against planned budgets, forecast final project profitability, manage time and expense workflows, and surface actionable AI-assisted risk explanations before profit erosion occurs.
+Single-page app for MarginWatch, built with **Vite 8, React 19, TypeScript and Tailwind CSS 4**.
+It talks only to the Django REST API (`/api/v1/`); every financial figure, risk status and
+permission comes from the backend. See the root [`README.md`](../README.md) for the full project.
 
----
+## Run
 
-## Core Operational Question
+```bash
+npm install
+npm run dev        # http://localhost:3000 — proxies /api to http://127.0.0.1:8000
+npm run build      # production build into dist/
+npx tsc --noEmit   # type check
+```
 
-Every screen, metric, and workflow in MarginWatch is engineered to help agency leaders and delivery teams immediately answer:
+Start the backend first (`python manage.py runserver` in `../backend`). Optional configuration:
+copy `.env.example` to `.env.local`. Only `VITE_*` variables reach the browser, so never put
+secrets here — the Gemini key lives in the backend environment.
 
-> **“Which projects are financially at risk, why are they at risk, and what should I do next?”**
+## Structure
 
----
-
-## Documentation Architecture
-
-This repository contains the complete, assessment-ready **Frontend Architecture, UI/UX & Implementation Blueprint**. In accordance with strict assessment integrity constraints, no application source code has been pre-generated; instead, this specification suite provides the complete architectural, visual, data-contract, and milestone-by-milestone engineering blueprint required for a solo developer to implement and defend the system independently.
-
-### Frontend Specification Suite (`docs/frontend/`)
-
-| Document | Scope & Purpose |
+| Path | Purpose |
 | :--- | :--- |
-| [**`docs/frontend/README.md`**](./docs/frontend/README.md) | Repository audit findings, baseline financial rules & formulas, role permission matrix, verified technology stack, and architectural principles. |
-| [**`docs/frontend/design-system.md`**](./docs/frontend/design-system.md) | Visual design direction, 60-30-10 color token table with WCAG 2.2 AA contrast verification, 2+1 typography scale (`Plus Jakarta Sans`, `Public Sans`, `JetBrains Mono` with `tabular-nums`), spacing, elevation, and layout shell contracts. |
-| [**`docs/frontend/routes-and-pages.md`**](./docs/frontend/routes-and-pages.md) | Complete route evaluation, access control matrix, and page-by-page UX specifications for `/login`, `/dashboard`, `/clients/*`, `/projects/*`, `/expenses`, and `/settings`, including financial visualizations and the AI Risk Advisor interface. |
-| [**`docs/frontend/component-architecture.md`**](./docs/frontend/component-architecture.md) | Reusable component inventory across 14 conceptual layers, feature-oriented folder structure, Server vs. Client Component boundaries, Next.js App Router architecture, and strict TypeScript/import governance. |
-| [**`docs/frontend/api-integration.md`**](./docs/frontend/api-integration.md) | Authoritative Django REST API integration contracts, request/response schemas, timeout/retry policies, RBAC error handling, and TanStack Query cache invalidation matrices. |
-| [**`docs/frontend/forms-and-state.md`**](./docs/frontend/forms-and-state.md) | React Hook Form + Zod schema specifications, explicit `null` estimate handling, server `400` validation mapping, URL state synchronization, and the 15 mandatory application states. |
-| [**`docs/frontend/accessibility-and-responsive-design.md`**](./docs/frontend/accessibility-and-responsive-design.md) | WCAG 2.2 AA accessibility compliance, keyboard navigation flows, ARIA live-region patterns, reduced-motion rules, and mobile/tablet/desktop responsive adaptations. |
-| [**`docs/frontend/testing-and-acceptance.md`**](./docs/frontend/testing-and-acceptance.md) | Comprehensive QA verification checklist, end-to-end user journeys, measurable acceptance criteria, and automated test planning (Vitest, React Testing Library, Playwright). |
-| [**`docs/frontend/implementation-roadmap.md`**](./docs/frontend/implementation-roadmap.md) | Dependency-aware, 13-milestone implementation sequence tailored for a solo developer, complete with tasks, file inventories, manual test procedures, and completion gates. |
+| `src/App.tsx` | Shell, navigation and the main screens (dashboard, projects, clients, time ledger, expenses, settings) |
+| `src/components/auth/` | Sign-in and registration |
+| `src/components/views/` | Project detail (financials, time, expenses, AI Risk Advisor panel), profile & team management |
+| `src/components/modals/` | Project, client, time-entry, expense, estimate and rejection forms |
+| `src/components/shared/` | Status badges, budget/forecast chart, *Load more* footer |
+| `src/hooks/usePagedList.ts` | Server-side paging for large lists (one page at a time) |
+| `src/services/api-client.ts` | Typed REST client: JWT bearer tokens, refresh with in-flight de-duplication, error-envelope parsing |
+| `src/services/auth-and-store.ts` | Data helpers: transforms, page/summary fetchers, mutations |
+| `src/services/financials.ts` | Maps backend financial summaries and dashboard totals onto UI types |
+| `src/lib/financial-engine.ts` | Currency/percentage/hour **formatters only** — no financial calculations happen in the browser |
+| `src/types/domain.ts` | Domain types |
 
----
+## Conventions
 
-## Quick Start for Implementation
+- **Backend is authoritative.** The UI never computes budgets, forecasts or risk; it renders `/projects/financial-summaries/` and `/dashboard/summary/`.
+- **Role-aware UI, server-enforced security.** Hiding a control for team members is a usability choice; the API masks and rejects on its own.
+- **No bulk loading.** Time entries and expenses are fetched per screen with paging and filters; totals come from `/time-entries/summary/` and `/expenses/summary/`. They are not cached in `localStorage`.
+- **Failures stay local.** A failed time-entry, expense or project write shows an error toast and leaves the screen unchanged; an AI advisor failure only affects its own panel.
 
-1. Review [**`docs/frontend/README.md`**](./docs/frontend/README.md) to understand the repository audit findings, baseline financial rules, and role matrix.
-2. Follow [**`docs/frontend/implementation-roadmap.md`**](./docs/frontend/implementation-roadmap.md) starting at **Milestone 1 (Audit existing frontend and finalize design system)** and **Milestone 2 (Initialize and verify the frontend toolchain)**.
-3. Verify each milestone against the acceptance checklists in [**`docs/frontend/testing-and-acceptance.md`**](./docs/frontend/testing-and-acceptance.md).
+## Design documents
+
+[`docs/frontend/`](./docs/frontend/) holds the original pre-implementation UX blueprint (design
+system, routes, accessibility, acceptance checklists). It was written for a Next.js + TanStack Query
+stack; each document carries a note describing what was actually built.

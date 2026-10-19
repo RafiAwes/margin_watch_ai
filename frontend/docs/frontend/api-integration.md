@@ -1,5 +1,7 @@
 # MarginWatch API Integration Contract Specification
 
+> **Implementation note (October 2026):** this document is the original pre-implementation blueprint. The frontend that was actually built is a **Vite + React 19 + TypeScript + Tailwind CSS single-page app** (decision `DEC-002`) — it does not use Next.js, the App Router, Server Components, TanStack Query, React Hook Form or Zod. Server data is loaded through `src/services/api-client.ts`, lists are paged with `src/hooks/usePagedList.ts`, and all financial figures come from the backend engine. See [`frontend/README.md`](../../README.md) and the root [`README.md`](../../../README.md). Design-system, accessibility, financial and role rules in this document still apply.
+
 ## 1. Baseline Contract Governance & Error Envelope
 
 As documented in [`README.md`](./README.md), because the repository did not initially contain `docs/api-specification.md`, this document establishes the **Canonical MarginWatch REST API Contract** between the Next.js frontend and the Django REST Framework (DRF) backend.

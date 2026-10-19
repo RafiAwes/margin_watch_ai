@@ -78,7 +78,7 @@ Before committing changes to version control, verify the following:
 
 - MarginWatch handles sensitive agency financial data (contract revenues, internal hourly costs, expense receipts).
 - **Never commit `.env` or any file containing real credentials.** The repository includes a safe [`.env.example`](.env.example) template.
-- The Google Gemini API key must **never** be exposed in the frontend or prefixed with `NEXT_PUBLIC_`.
+- The Google Gemini API key must **never** be exposed in the frontend or prefixed with `VITE_` (Vite inlines every `VITE_*` variable into the browser bundle).
 - If a secret is accidentally committed, rotate the credential immediately and scrub the repository history.
 
 ---

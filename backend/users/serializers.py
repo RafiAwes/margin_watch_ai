@@ -1,9 +1,11 @@
-from decimal import Decimal
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import (
     TokenObtainPairSerializer,
     TokenRefreshSerializer,
 )
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 from users.models import User, UserRole
 
@@ -72,24 +74,21 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A user with this email address already exists.")
         return normalized
 
+    def validate(self, attrs):
+        # Run Django's password validators (length, common passwords, similarity to name/email)
+        candidate = User(
+            email=attrs.get("email", ""),
+            first_name=attrs.get("first_name", ""),
+            last_name=attrs.get("last_name", ""),
+        )
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+        return attrs
+
     def create(self, validated_data):
         return User.objects.create_user(**validated_data)
-
-
-class UserRegisterSerializer(UserCreateSerializer):
-    """
-    Public registration serializer for new agency users.
-    Accepts email, password, and optional first_name, last_name, role, and rate.
-    """
-
-    first_name = serializers.CharField(required=False, allow_blank=True, default="")
-    last_name = serializers.CharField(required=False, allow_blank=True, default="")
-    default_hourly_cost_rate = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=4,
-        required=False,
-        default=Decimal("0.0000"),
-    )
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
@@ -129,6 +128,39 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                     )
 
         return attrs
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """
+    Lets the signed-in user replace their password (e.g. the initial one a manager set).
+    Requires the current password and revokes the user's outstanding refresh tokens.
+    """
+
+    current_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    new_password = serializers.CharField(write_only=True, style={"input_type": "password"})
+
+    def validate_current_password(self, value):
+        if not self.context["request"].user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value
+
+    def validate(self, attrs):
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError({"new_password": ["New password must differ from the current one."]})
+        try:
+            validate_password(attrs["new_password"], user=self.context["request"].user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"new_password": list(exc.messages)})
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password", "updated_at"])
+        # Sign out other sessions: their refresh tokens can no longer be used
+        for token in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=token)
+        return user
 
 
 class LogoutSerializer(serializers.Serializer):

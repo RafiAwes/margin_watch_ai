@@ -135,6 +135,21 @@ All error responses return an HTTP 4xx or 5xx status code with a uniform error e
   }
   ```
 
+
+### 2.4 Change Password
+- **Endpoint:** `POST /api/v1/auth/change-password/`
+- **Authentication:** Authenticated (any role).
+- **Request Body:** `{"current_password": "...", "new_password": "..."}`
+- **Rules:** `current_password` must match; `new_password` must differ from it and pass Django's password validators (length, common passwords, similarity to the user's name/email).
+- **Effect:** the password is replaced and **all of the user's refresh tokens are revoked** (other sessions are signed out; the frontend signs in again with the new password).
+- **Responses:** `200 OK` `{"detail": "Password updated."}` · `400 VALIDATION_ERROR` with `current_password` / `new_password` field details · `401` when unauthenticated.
+
+### 2.5 Account Provisioning (no public sign-up)
+MarginWatch serves one agency, so there is **no public registration endpoint**. Accounts are created by
+managers with `POST /api/v1/users/` (email, name, role, hourly cost rate, initial password — validated with
+Django's password validators). New staff sign in with the initial password and change it via §2.4.
+The first manager account is created on the server (`python manage.py seed_dev_users` or `createsuperuser`).
+
 ---
 
 ## 3. Client Management Endpoints

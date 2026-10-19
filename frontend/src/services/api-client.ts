@@ -320,67 +320,6 @@ export const apiClient = {
 
   // Auth Endpoints
   auth: {
-    async register(data: {
-      email: string;
-      password: string;
-      first_name?: string;
-      last_name?: string;
-      role?: UserRole;
-      default_hourly_cost_rate?: number;
-    }): Promise<{
-      user: User;
-      session: AuthSession;
-      raw: LoginApiResponse;
-    }> {
-      const payload = {
-        email: data.email.trim().toLowerCase(),
-        password: data.password,
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        role: data.role || 'TEAM_MEMBER',
-        default_hourly_cost_rate: data.default_hourly_cost_rate ?? 0,
-      };
-
-      const res = await apiClient.request<LoginApiResponse>('/auth/register/', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        skipAuth: true,
-      });
-
-      const accessToken = res.access_token || res.access;
-      const refreshToken = res.refresh_token || res.refresh;
-      apiClient.setTokens(accessToken, refreshToken);
-
-      let fullProfile: User;
-      try {
-        fullProfile = await apiClient.auth.getMe();
-      } catch {
-        fullProfile = {
-          id: String(res.user.id),
-          email: res.user.email,
-          full_name: `${res.user.first_name || ''} ${res.user.last_name || ''}`.trim() || res.user.email,
-          role: res.user.role,
-          title: res.user.role === 'MANAGER' ? 'Agency Delivery Manager' : 'Senior Software Engineer',
-          default_hourly_cost: res.user.role === 'MANAGER' ? (data.default_hourly_cost_rate || 125) : 0,
-        };
-      }
-
-      const session: AuthSession = {
-        token: accessToken,
-        refresh_token: refreshToken,
-        user: fullProfile,
-        issued_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        session_id: `sess_${Date.now().toString(36)}`,
-      };
-
-      return {
-        user: fullProfile,
-        session,
-        raw: res,
-      };
-    },
-
     async login(
       email: string,
       password: string
@@ -449,6 +388,13 @@ export const apiClient = {
         body: JSON.stringify(data),
       });
       return transformBackendUserToUser(res);
+    },
+
+    async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+      await apiClient.request('/auth/change-password/', {
+        method: 'POST',
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
     },
 
     async logout(): Promise<void> {
@@ -636,6 +582,15 @@ export const apiClient = {
 
   // Labor Time Entry Endpoints
   timeEntries: {
+    /** One page of the paginated list (count/next/results); filters as query params. */
+    async page(params: URLSearchParams): Promise<{ count: number; next: string | null; results: any[] }> {
+      return apiClient.request(`/time-entries/?${params.toString()}`);
+    },
+
+    async summary(params: URLSearchParams = new URLSearchParams()): Promise<any> {
+      return apiClient.request(`/time-entries/summary/?${params.toString()}`);
+    },
+
     async list(filters?: { project_id?: string; date_from?: string; date_to?: string }): Promise<any[]> {
       const params = new URLSearchParams();
       if (filters?.project_id) params.append('project_id', filters.project_id);
@@ -666,6 +621,15 @@ export const apiClient = {
 
   // Direct Project Expense Endpoints
   expenses: {
+    /** One page of the paginated list (count/next/results); filters as query params. */
+    async page(params: URLSearchParams): Promise<{ count: number; next: string | null; results: any[] }> {
+      return apiClient.request(`/expenses/?${params.toString()}`);
+    },
+
+    async summary(params: URLSearchParams = new URLSearchParams()): Promise<any> {
+      return apiClient.request(`/expenses/summary/?${params.toString()}`);
+    },
+
     async list(filters?: { project_id?: string; status?: string }): Promise<any[]> {
       const params = new URLSearchParams();
       if (filters?.project_id) params.append('project_id', filters.project_id);
@@ -701,7 +665,7 @@ export const apiClient = {
     },
   },
 
-  // Authoritative Financial Engine Endpoints (Manager only)
+  // Financial engine endpoints (managers only)
   financials: {
     async projectSummary(projectId: string): Promise<any> {
       return apiClient.request<any>(`/projects/${projectId}/financial-summary/`);

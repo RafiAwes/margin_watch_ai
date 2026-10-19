@@ -35,9 +35,7 @@ class RiskStatus:
     ALL = (HEALTHY, AT_RISK, OVER_BUDGET, INSUFFICIENT_DATA)
 
 
-# -----------------------------------------------------------------------------
 # Input guards & rounding helpers
-# -----------------------------------------------------------------------------
 
 def _decimal(name: str, value, *, allow_none: bool = False) -> Optional[Decimal]:
     """Rejects anything that is not a Decimal (floats in particular), per financial-rules §4.1."""
@@ -68,9 +66,7 @@ def format_money(amount: Decimal, currency: str) -> str:
     return f"{sign}{symbol}{abs(quantized):,.2f}"
 
 
-# -----------------------------------------------------------------------------
 # Formulas (financial-rules §3)
-# -----------------------------------------------------------------------------
 
 def total_hours_logged(entries: Iterable[tuple]) -> Decimal:
     total = ZERO
@@ -167,9 +163,7 @@ def projected_profit_margin_percentage(
     return percent(profit / revenue * HUNDRED)
 
 
-# -----------------------------------------------------------------------------
 # Risk precedence (financial-rules §7)
-# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class RiskAssessment:
@@ -265,9 +259,7 @@ def classify_risk(
     )
 
 
-# -----------------------------------------------------------------------------
 # Project & portfolio summaries
-# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class ProjectFinancialInputs:

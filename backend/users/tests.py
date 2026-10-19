@@ -303,39 +303,97 @@ class UserManagementTests(APITestCase):
         self.developer.refresh_from_db()
         self.assertFalse(self.developer.is_active)
 
-    def test_tc_auth_register_successful(self):
-        """Public registration creates user and returns JWT tokens with HTTP 201."""
-        register_url = reverse("users:auth-register")
-        payload = {
-            "email": "newuser@agency.com",
-            "password": "NewUserPass123!",
-            "first_name": "New",
-            "last_name": "User",
-            "role": UserRole.TEAM_MEMBER,
-        }
-        response = self.client.post(register_url, payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn("access_token", response.data)
-        self.assertIn("refresh_token", response.data)
-        self.assertEqual(response.data["user"]["email"], "newuser@agency.com")
-        self.assertTrue(User.objects.filter(email="newuser@agency.com").exists())
+    def test_tc_auth_no_public_registration(self):
+        """Accounts are created by managers only; there is no public sign-up endpoint."""
+        response = self.client.post(
+            "/api/v1/auth/register/",
+            {"email": "intruder@agency.com", "password": "IntruderPass123!", "role": UserRole.MANAGER},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(User.objects.filter(email="intruder@agency.com").exists())
 
-    def test_tc_auth_register_duplicate_email(self):
-        """Registration with existing email is rejected with HTTP 400."""
-        register_url = reverse("users:auth-register")
-        payload = {
-            "email": "manager@agency.com",
-            "password": "AnyPassword123!",
-        }
-        response = self.client.post(register_url, payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    def test_tc_user_create_rejects_weak_password(self):
+        """Manager-created accounts must pass Django's password validators."""
+        self.authenticate_as(self.manager, self.manager_password)
+        for weak in ("short", "password123", "12345678"):
+            response = self.client.post(
+                self.users_url,
+                {"email": "weak@agency.com", "password": weak, "first_name": "Weak", "last_name": "Pass"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, weak)
+            fields = [d["field"] for d in response.data["error"]["details"]]
+            self.assertIn("password", fields)
+        self.assertFalse(User.objects.filter(email="weak@agency.com").exists())
 
-    def test_tc_auth_register_short_password(self):
-        """Registration with password < 8 characters is rejected with HTTP 400."""
-        register_url = reverse("users:auth-register")
-        payload = {
-            "email": "shortpw@agency.com",
-            "password": "short",
-        }
-        response = self.client.post(register_url, payload, format="json")
+    def test_tc_user_created_member_can_sign_in(self):
+        """A team member created by a manager can sign in with the initial password."""
+        self.authenticate_as(self.manager, self.manager_password)
+        self.client.post(
+            self.users_url,
+            {"email": "newhire@agency.com", "password": "WelcomeAboard42!", "first_name": "New",
+             "last_name": "Hire", "role": UserRole.TEAM_MEMBER},
+            format="json",
+        )
+        self.client.credentials()
+        response = self.client.post(
+            reverse("users:auth-login"),
+            {"email": "newhire@agency.com", "password": "WelcomeAboard42!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["user"]["role"], UserRole.TEAM_MEMBER)
+
+
+class ChangePasswordTests(APITestCase):
+    def setUp(self):
+        self.password = "InitialPass123!"
+        self.user = User.objects.create_user(
+            email="member@agency.com", password=self.password, first_name="Mia", last_name="Hart",
+            role=UserRole.TEAM_MEMBER,
+        )
+        self.url = reverse("users:auth-change-password")
+        self.login_url = reverse("users:auth-login")
+
+    def login(self, password):
+        return self.client.post(self.login_url, {"email": "member@agency.com", "password": password}, format="json")
+
+    def test_change_password_success(self):
+        tokens = self.login(self.password).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}")
+        response = self.client.post(
+            self.url, {"current_password": self.password, "new_password": "BrandNewSecret456!"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.client.credentials()
+        self.assertEqual(self.login(self.password).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self.login("BrandNewSecret456!").status_code, status.HTTP_200_OK)
+
+        # Refresh tokens issued before the change are revoked
+        refresh = self.client.post(reverse("users:auth-refresh"), {"refresh": tokens["refresh_token"]}, format="json")
+        self.assertEqual(refresh.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_wrong_current_password(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            self.url, {"current_password": "WrongPass999!", "new_password": "BrandNewSecret456!"}, format="json"
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["error"]["details"][0]["field"], "current_password")
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.password))
+
+    def test_weak_or_unchanged_new_password(self):
+        self.client.force_authenticate(self.user)
+        for new in ("short", "password123", self.password):
+            response = self.client.post(self.url, {"current_password": self.password, "new_password": new}, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, new)
+            self.assertIn("new_password", [d["field"] for d in response.data["error"]["details"]])
+
+    def test_requires_authentication(self):
+        response = self.client.post(
+            self.url, {"current_password": self.password, "new_password": "BrandNewSecret456!"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

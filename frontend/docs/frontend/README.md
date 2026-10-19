@@ -1,5 +1,7 @@
 # MarginWatch Frontend Architecture & Engineering Blueprint
 
+> **Implementation note (October 2026):** this document is the original pre-implementation blueprint. The frontend that was actually built is a **Vite + React 19 + TypeScript + Tailwind CSS single-page app** (decision `DEC-002`) — it does not use Next.js, the App Router, Server Components, TanStack Query, React Hook Form or Zod. Server data is loaded through `src/services/api-client.ts`, lists are paged with `src/hooks/usePagedList.ts`, and all financial figures come from the backend engine. See [`frontend/README.md`](../../README.md) and the root [`README.md`](../../../README.md). Design-system, accessibility, financial and role rules in this document still apply.
+
 ## 1. Repository Audit & Baseline Resolution
 
 ### 1.1 Current Repository State Audit
@@ -87,13 +89,13 @@ In accordance with Section 4 of the Master Prompt, the target frontend stack is 
 | Layer | Technology & Version Policy | Architectural Rationale |
 | :--- | :--- | :--- |
 | **Package Manager** | **`npm`** (standardized via `package-lock.json`) | Already present in the repository environment; avoids lockfile fragmentation. |
-| **Framework** | **Next.js `^15.2.x` (App Router)** | Stable App Router architecture with React Server Components, typed route handlers, loading/error boundaries, and middleware support. |
-| **UI Runtime** | **React `^19.0.0` & React DOM `^19.0.0`** | Matches the repository's installed React 19 baseline and Next.js 15 stable compatibility. |
+| **Framework** | **Vite `^8` + React SPA** *(planned: Next.js App Router)* | Single-page app with a Vite dev server proxying `/api` to Django; no SSR required for an authenticated dashboard (`DEC-002`). |
+| **UI Runtime** | **React `^19.0.0` & React DOM `^19.0.0`** | Matches the repository's installed React 19 baseline. |
 | **Language** | **TypeScript `^5.8.x` (Strict Mode)** | `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true` to guarantee null-safety for financial values. |
 | **Styling** | **Tailwind CSS `^4.x` (`@tailwindcss/postcss`)** | Zero-runtime CSS utility system configured with semantic CSS variables for the 60-30-10 financial palette. |
 | **Accessible UI Primitives** | **shadcn/ui (Radix UI Primitives)** | Provides WAI-ARIA compliant `Dialog`, `AlertDialog`, `Select`, `Tabs`, `Tooltip`, `DropdownMenu`, and `Popover` foundations without locking into a generic template aesthetic. |
 | **Icons** | **`lucide-react` (`^0.546.0`)** | Consistent 1.75px stroke geometric iconography paired with mandatory text labels for status indicators. |
-| **Server State & Caching** | **TanStack Query (`@tanstack/react-query` `^5.x`)** | Handles client-side mutations, loading/error states, retry policies, and cross-resource cache invalidation (e.g., invalidating project financials when an expense is approved). |
+| **Server State & Caching** | **Typed API client + `usePagedList` hook** *(planned: TanStack Query `^5.x`)* | Handles client-side mutations, loading/error states, retry policies, and cross-resource cache invalidation (e.g., invalidating project financials when an expense is approved). |
 | **Forms & Validation** | **React Hook Form `^7.x` + Zod `^3.24.x` + `@hookform/resolvers`** | Co-locates client schema validation (decimal hour rules, positive currency amounts, explicit nullable remaining hours) with Django `400` server field error mapping. |
 | **Notifications** | **`sonner` (`^2.x`)** | Lightweight, keyboard-accessible toast notifications for mutation confirmations and recoverable errors. |
 | **Analytical Charts** | **Custom Accessible SVG Bar/Bullet Components (or lightweight `recharts` `^2.15.x` isolated to 2 client chart components)** | MarginWatch requires only two high-signal visualizations (Planned vs. Actual vs. Forecast Bullet/Bar comparison and Budget Consumption progress bars). Custom semantic SVG or lazily loaded Recharts avoids bundle bloat while guaranteeing full ARIA table fallbacks. |
@@ -106,7 +108,7 @@ Use the following documents in sequence to review or implement the system:
 
 1. [**Design System Specification (`design-system.md`)**](./design-system.md)
 2. [**Routes & Pages Specification (`routes-and-pages.md`)**](./routes-and-pages.md)
-3. [**Component & Next.js Architecture (`component-architecture.md`)**](./component-architecture.md)
+3. [**Component Architecture (`component-architecture.md`, original Next.js blueprint)**](./component-architecture.md)
 4. [**API Integration Contracts (`api-integration.md`)**](./api-integration.md)
 5. [**Forms, Validation & Application States (`forms-and-state.md`)**](./forms-and-state.md)
 6. [**Accessibility & Responsive UX (`accessibility-and-responsive-design.md`)**](./accessibility-and-responsive-design.md)

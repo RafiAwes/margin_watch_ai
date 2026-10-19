@@ -1,6 +1,13 @@
+from collections import defaultdict
+from decimal import Decimal
+
+from config.ordering import StableOrderingFilter
 from rest_framework import viewsets, permissions, filters
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from config.query_params import date_param, uuid_param
+from profitability.services import money
 from users.models import UserRole
 from time_tracking.models import TimeEntry
 from time_tracking.serializers import TimeEntrySerializer
@@ -18,7 +25,7 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
 
     serializer_class = TimeEntrySerializer
     permission_classes = [permissions.IsAuthenticated, IsTimeEntryOwnerOrManager]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [filters.SearchFilter, StableOrderingFilter]
     search_fields = ["description", "project__name"]
     ordering_fields = ["work_date", "recorded_hours", "created_at"]
     ordering = ["-work_date", "-created_at"]
@@ -56,3 +63,35 @@ class TimeEntryViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(work_date__lte=date_to)
 
         return queryset
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        """
+        GET /api/v1/time-entries/summary/ — totals for the same scope and filters as the list,
+        so screens can show counts and hours without loading every entry. Labor cost is
+        returned to managers only (wage confidentiality) and uses per-entry rounding like
+        the financial engine.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        count, hours_total, labor = 0, Decimal("0"), Decimal("0")
+        by_project = defaultdict(lambda: {"count": 0, "hours": Decimal("0")})
+        for project_id, hours, rate in queryset.order_by().values_list(
+            "project_id", "recorded_hours", "hourly_cost_snapshot"
+        ):
+            count += 1
+            hours_total += hours
+            labor += money(hours * rate)
+            by_project[project_id]["count"] += 1
+            by_project[project_id]["hours"] += hours
+
+        data = {
+            "count": count,
+            "total_hours": str(hours_total.quantize(Decimal("0.01"))),
+            "by_project": [
+                {"project_id": str(pid), "count": v["count"], "hours": str(v["hours"].quantize(Decimal("0.01")))}
+                for pid, v in by_project.items()
+            ],
+        }
+        if request.user.role == UserRole.MANAGER:
+            data["total_labor_cost"] = str(money(labor))
+        return Response(data)

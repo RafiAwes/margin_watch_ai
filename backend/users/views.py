@@ -11,43 +11,11 @@ from users.serializers import (
     CustomTokenObtainPairSerializer,
     CustomTokenRefreshSerializer,
     LogoutSerializer,
+    ChangePasswordSerializer,
     UserCreateSerializer,
-    UserRegisterSerializer,
     UserSerializer,
     UserUpdateSerializer,
 )
-
-
-class RegisterView(generics.CreateAPIView):
-    """
-    POST /api/v1/auth/register/
-    Public endpoint to create a new agency user account and issue signed JWT tokens.
-    """
-
-    permission_classes = [permissions.AllowAny]
-    serializer_class = UserRegisterSerializer
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        refresh = RefreshToken.for_user(user)
-
-        response_data = {
-            "access": str(refresh.access_token),
-            "access_token": str(refresh.access_token),
-            "refresh": str(refresh),
-            "refresh_token": str(refresh),
-            "user": {
-                "id": str(user.id),
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "role": user.role,
-            },
-        }
-        headers = self.get_success_headers(serializer.data)
-        return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -85,6 +53,23 @@ class LogoutView(generics.GenericAPIView):
             {"detail": "Successfully logged out."},
             status=status.HTTP_200_OK,
         )
+
+
+class ChangePasswordView(generics.GenericAPIView):
+    """
+    POST /api/v1/auth/change-password/
+    Change the signed-in user's password. Accounts are created by managers (there is no
+    public sign-up), so this is how a team member replaces their initial password.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ChangePasswordSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password updated."}, status=status.HTTP_200_OK)
 
 
 class CurrentUserView(generics.RetrieveUpdateAPIView):

@@ -11,7 +11,7 @@
 
 ## 1. Architectural Overview & Philosophy
 
-MarginWatch is built as a decoupled, full-stack web application adhering to a **backend-authoritative** architecture. The system is split cleanly between a modern Next.js client interface and a Django REST Framework (DRF) backend service running on **Python 3.15**.
+MarginWatch is built as a decoupled, full-stack web application adhering to a **backend-authoritative** architecture. The system is split cleanly between a Vite + React 19 single-page app (TypeScript, Tailwind CSS) and a Django REST Framework (DRF) backend service running on **Python 3.15**.
 
 ### 1.1 Single-Agency Architecture Law
 - **One Agency Supported:** MarginWatch monitors project delivery profitability for **one software agency only** for this assessment MVP.
@@ -32,9 +32,9 @@ MarginWatch is built as a decoupled, full-stack web application adhering to a **
 
 ```mermaid
 graph TB
-    subgraph Client Tier [Frontend - Next.js App Router]
+    subgraph Client Tier [Frontend - Vite + React SPA]
         UI[User Interface & Pages<br>Tailwind CSS + React Components]
-        State[Client State & React Query / Fetch]
+        State[Client State & API client / paged lists]
         UXVal[Client-Side Form Validation]
     end
 
@@ -85,7 +85,7 @@ graph TB
 - **AI Gateway & Context Assembly:** Packages verified financial metrics, strips sensitive PII, formats prompt payloads, calls the Google Gemini API, and validates the returned structured output.
 - **Standardized Response Formatting:** Guarantees uniform JSON envelopes for both successful payloads and validation/system errors.
 
-### 3.2 Frontend Responsibilities (Next.js & TypeScript)
+### 3.2 Frontend Responsibilities (Vite + React & TypeScript)
 - **Presentation & Interaction:** Delivers an intuitive, accessible interface built with TypeScript and Tailwind CSS.
 - **Frontend Visibility Does Not Replace Authorization:** Frontend conditional rendering (e.g., hiding a button or tab) is purely for usability; the backend authorizes every request independently.
 - **Lifecycle & State Handling:** Explicitly manages and renders **loading**, **success**, **empty**, and **error** states for every asynchronous view.
@@ -101,7 +101,7 @@ graph TB
 sequenceDiagram
     autonumber
     actor Member as Team Member (TEAM_MEMBER)
-    participant FE as Next.js Client
+    participant FE as React SPA
     participant API as DRF View / Serializer
     participant Perm as Permission Engine
     participant DB as Relational Database
@@ -130,7 +130,7 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor Mgr as Manager (MANAGER)
-    participant FE as Next.js Client
+    participant FE as React SPA
     participant API as DRF Financial View
     participant FinSvc as Financial Calculation Service (Python 3.15)
     participant AISvc as AI Advisor Service
@@ -212,8 +212,8 @@ All API responses follow a predictable JSON error schema. Internal system errors
            │
            │ HTTPS
            ▼
-[ Frontend Server (Next.js) ]
-  • Exposed ENV: NEXT_PUBLIC_API_BASE_URL only
+[ Frontend (static Vite build / dev server) ]
+  • Exposed ENV: VITE_API_BASE_URL only (optional)
   • Zero access to database credentials or Gemini API keys
            │
            │ HTTPS / REST (/api/v1/...)

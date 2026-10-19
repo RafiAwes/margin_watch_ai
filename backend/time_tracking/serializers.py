@@ -108,8 +108,7 @@ class TimeEntrySerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         request = self.context.get("request")
 
-        # CONFIDENTIAL WAGE CONCEALMENT:
-        # If requesting user is TEAM_MEMBER, cost rates and computed cost are masked
+        # Team members never see cost rates or computed labor cost
         if request and getattr(request.user, "role", None) == UserRole.TEAM_MEMBER:
             data.pop("hourly_cost_snapshot", None)
             data.pop("computed_cost", None)

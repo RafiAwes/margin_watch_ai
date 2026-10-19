@@ -36,7 +36,9 @@ class ClientSerializer(serializers.ModelSerializer):
         ]
 
     def get_projects_count(self, obj):
-        return obj.projects.count()
+        # Annotated by ClientViewSet.get_queryset to avoid one COUNT query per client
+        annotated = getattr(obj, "projects_total", None)
+        return annotated if annotated is not None else obj.projects.count()
 
     def create(self, validated_data):
         request = self.context.get("request")

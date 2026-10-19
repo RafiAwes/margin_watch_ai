@@ -5,6 +5,14 @@
 **Deciders:** Lead Architect & Full-Stack Developer  
 **Consulted:** Technical Evaluation Guidelines, Financial Domain Best Practices  
 
+
+> **Amendment (October 2026):** the frontend was implemented as a **Vite + React 19 + TypeScript +
+> Tailwind CSS single-page app** instead of Next.js (decision `DEC-002`: faster iteration, no SSR
+> requirement for an authenticated dashboard, and a working prototype already existed). The decoupled
+> API boundary, backend authority and AI boundary in this ADR are unchanged. The database is
+> PostgreSQL on Neon from the start (SQLite remains a fallback when `DATABASE_URL` is unset). The
+> rationale below is kept as the original decision record.
+
 ---
 
 ## 1. Context & Problem Statement
@@ -25,7 +33,7 @@ The system requires:
 We have decided on the following initial architecture:
 1. **Decoupled Architecture:** Separate Next.js frontend and Django REST Framework (DRF) backend communicating over a versioned REST API (`/api/v1/`).
 2. **Backend Stack:** Python 3.15 with Django and Django REST Framework.
-3. **Frontend Stack:** Next.js (App Router), TypeScript, and Tailwind CSS.
+3. **Frontend Stack:** Next.js (App Router), TypeScript, and Tailwind CSS. *(Amended — see the note at the top: implemented as a Vite + React 19 SPA.)*
 4. **Initial Database:** SQLite for local development (Phases 1–7), with a direct migration path to PostgreSQL for production deployments (Phase 8+).
 5. **Deterministic Financial Engine:** All financial calculations and risk classifications are implemented as pure, deterministic Python functions using exact decimal arithmetic (`Decimal`).
 6. **Advisory-Only AI Layer:** The Google Gemini API is accessed strictly server-side by the backend. It acts as an explanation and recommendation engine; it is never the source of truth for financial figures or project risk statuses, and it holds zero write permissions.

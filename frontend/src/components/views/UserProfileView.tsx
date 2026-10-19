@@ -33,7 +33,7 @@ import {
 import { formatCurrency, formatHours } from '../../lib/financial-engine';
 import {
   createMemberWithApi,
-  updateUserPassword,
+  changePasswordWithApi,
   updateUserProfile,
   updateUserProfileWithApi,
 } from '../../services/auth-and-store';
@@ -48,8 +48,16 @@ export const UserProfileView: React.FC<{
   session: AuthSession;
   registeredUsers: StoredUserAccount[];
   assignedProjects: EnrichedProject[];
+  /** The signed-in user's most recent entries (first page from the API). */
   timeEntries: TimeEntry[];
-  expenses: Expense[];
+  /** The signed-in user's totals from /time-entries/summary/ and /expenses/summary/. */
+  activity: {
+    entries: number;
+    hours: number;
+    laborCost: number;
+    approvedExpenses: number;
+    pendingExpenses: number;
+  };
   initialTab?: ProfileTab;
   onProfileUpdated: (
     updatedSession: AuthSession,
@@ -69,7 +77,7 @@ export const UserProfileView: React.FC<{
   registeredUsers,
   assignedProjects,
   timeEntries,
-  expenses,
+  activity,
   initialTab = 'OVERVIEW_AND_EDIT',
   onProfileUpdated,
   onUsersDirectoryUpdated,
@@ -137,28 +145,16 @@ export const UserProfileView: React.FC<{
   const [newMemberTitle, setNewMemberTitle] = useState('');
   const [newMemberRole, setNewMemberRole] = useState<UserRole>('TEAM_MEMBER');
   const [newMemberRate, setNewMemberRate] = useState('115');
+  const [newMemberPassword, setNewMemberPassword] = useState('');
   const [isCreatingMember, setIsCreatingMember] = useState(false);
   const [createMemberError, setCreateMemberError] = useState<string | null>(null);
 
-  // Personal Activity Metrics
-  const userTimeEntries = timeEntries.filter(
-    (t) => t.user_id === currentUser.id
-  );
-  const totalHoursLogged = userTimeEntries.reduce((sum, t) => sum + t.hours, 0);
-  const totalLaborCostGenerated = userTimeEntries.reduce(
-    (sum, t) => sum + t.hours * t.hourly_cost_snapshot,
-    0
-  );
-
-  const userExpenses = expenses.filter(
-    (e) => e.submitted_by_id === currentUser.id
-  );
-  const approvedExpensesTotal = userExpenses
-    .filter((e) => e.status === 'APPROVED')
-    .reduce((sum, e) => sum + e.amount, 0);
-  const pendingExpensesTotal = userExpenses
-    .filter((e) => e.status === 'PENDING')
-    .reduce((sum, e) => sum + e.amount, 0);
+  // Personal Activity Metrics (server-computed totals; recent entries are the first page)
+  const userTimeEntries = timeEntries;
+  const totalHoursLogged = activity.hours;
+  const totalLaborCostGenerated = activity.laborCost;
+  const approvedExpensesTotal = activity.approvedExpenses;
+  const pendingExpensesTotal = activity.pendingExpenses;
 
   const initials = currentUser.full_name
     .split(/\s+/)
@@ -236,21 +232,36 @@ export const UserProfileView: React.FC<{
     }
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError(null);
 
+    if (!currentPassword) {
+      setPasswordError('Please enter your current password.');
+      return;
+    }
     if (!newPassword.trim()) {
       setPasswordError('Please enter a new password.');
       return;
     }
-    if (confirmNewPassword && newPassword !== confirmNewPassword) {
+    if (newPassword !== confirmNewPassword) {
       setPasswordError('New password and confirmation do not match.');
       return;
     }
 
-    const res = updateUserPassword(currentUser.id, newPassword);
-    setPasswordError(res.error);
+    setIsChangingPassword(true);
+    const res = await changePasswordWithApi(currentUser.email, currentPassword, newPassword);
+    setIsChangingPassword(false);
+    if (res.ok === false) {
+      setPasswordError(res.error);
+      return;
+    }
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmNewPassword('');
+    onProfileUpdated(res.session, registeredUsers, 'Password updated. Other signed-in sessions were signed out.');
   };
 
   const startEditingMember = (member: StoredUserAccount) => {
@@ -318,6 +329,10 @@ export const UserProfileView: React.FC<{
       setCreateMemberError('Please enter a valid work email address.');
       return;
     }
+    if (newMemberPassword.length < 8) {
+      setCreateMemberError('Set an initial password of at least 8 characters to share with the new member.');
+      return;
+    }
 
     const parsedRate = Number(newMemberRate) || (newMemberRole === 'MANAGER' ? 135 : 115);
     setIsCreatingMember(true);
@@ -326,7 +341,7 @@ export const UserProfileView: React.FC<{
       const result = await createMemberWithApi({
         full_name: name,
         email: emailAddr,
-        password: 'AgencyPassword123!',
+        password: newMemberPassword,
         role: newMemberRole,
         title:
           newMemberTitle.trim() ||
@@ -334,7 +349,7 @@ export const UserProfileView: React.FC<{
             ? 'Delivery Manager'
             : 'Software Engineer'),
         default_hourly_cost: parsedRate,
-        assign_to_active_projects: true,
+        assign_to_active_projects: false, // assign per project from the project form
       });
 
       if (result.ok === false) {
@@ -346,13 +361,14 @@ export const UserProfileView: React.FC<{
       setNewMemberName('');
       setNewMemberEmail('');
       setNewMemberTitle('');
+      setNewMemberPassword('');
       setShowAddMemberForm(false);
       setIsCreatingMember(false);
 
       onUsersDirectoryUpdated(
         result.updatedUsers,
         result.updatedProjects,
-        `Added ${name} (${newMemberRole}) to the agency directory.`
+        `Added ${name} (${newMemberRole}). Share the initial password with them; they can change it under Profile & Security.`
       );
     } catch (err: any) {
       setCreateMemberError(err?.message || 'Failed to create team member.');
@@ -445,7 +461,7 @@ export const UserProfileView: React.FC<{
               {formatHours(totalHoursLogged)}
             </div>
             <span className="text-[11px] text-slate-500 font-mono-tabular">
-              {userTimeEntries.length} recorded time entries
+              {activity.entries.toLocaleString()} recorded time entries
             </span>
           </div>
 
@@ -545,7 +561,7 @@ export const UserProfileView: React.FC<{
         </div>
       </div>
 
-      {/* ==================== TAB 1: PROFILE & DELIVERY RATE ==================== */}
+      {/* Profile tab */}
       {activeTab === 'OVERVIEW_AND_EDIT' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left 8 Columns: Personal & Commercial Rate Form */}
@@ -861,7 +877,7 @@ export const UserProfileView: React.FC<{
         </div>
       )}
 
-      {/* ==================== TAB 2: SECURITY, PASSWORD & SESSIONS ==================== */}
+      {/* Security tab */}
       {activeTab === 'SECURITY_AND_SESSION' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Password Update Form */}
@@ -874,7 +890,7 @@ export const UserProfileView: React.FC<{
                 Change Account Password
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                Update the credential stored for {currentUser.email}.
+                Replace the password for {currentUser.email}. Other signed-in sessions will be signed out.
               </p>
             </div>
 
@@ -941,9 +957,10 @@ export const UserProfileView: React.FC<{
             <div className="pt-2 flex justify-end">
               <button
                 type="submit"
-                className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800"
+                disabled={isChangingPassword}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 disabled:opacity-60"
               >
-                Update Password
+                {isChangingPassword ? 'Updating...' : 'Update Password'}
               </button>
             </div>
           </form>
@@ -1070,7 +1087,7 @@ export const UserProfileView: React.FC<{
         </div>
       )}
 
-      {/* ==================== TAB 3: WATCHDOG ALERT PREFERENCES ==================== */}
+      {/* Alert preferences tab */}
       {activeTab === 'NOTIFICATIONS' && (
         <div className="bg-white border border-slate-200 rounded-lg p-6 max-w-3xl space-y-5">
           <div className="pb-3 border-b border-slate-200">
@@ -1149,7 +1166,7 @@ export const UserProfileView: React.FC<{
         </div>
       )}
 
-      {/* ==================== TAB 4: MANAGER TEAM DIRECTORY GOVERNANCE ==================== */}
+      {/* Team directory tab (managers) */}
       {activeTab === 'TEAM_DIRECTORY' && isManager && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden space-y-0">
           <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1177,12 +1194,12 @@ export const UserProfileView: React.FC<{
           {showAddMemberForm && (
             <form
               onSubmit={handleCreateMember}
-              className="p-5 bg-slate-50 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end"
+              className="p-5 bg-slate-50 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end"
             >
               {createMemberError && (
                 <div
                   role="alert"
-                  className="sm:col-span-5 p-2.5 rounded bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2"
+                  className="sm:col-span-3 lg:col-span-6 p-2.5 rounded bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2"
                 >
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{createMemberError}</span>
@@ -1212,6 +1229,24 @@ export const UserProfileView: React.FC<{
                   onChange={(e) => setNewMemberEmail(e.target.value)}
                   placeholder="samira@vanguard-agency.io"
                   className="w-full h-9 px-2.5 text-xs rounded border border-slate-300 bg-white"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="new-member-password"
+                  className="block text-[11px] font-medium text-slate-700 mb-1"
+                >
+                  Initial Password *
+                </label>
+                <input
+                  id="new-member-password"
+                  type="text"
+                  required
+                  autoComplete="new-password"
+                  value={newMemberPassword}
+                  onChange={(e) => setNewMemberPassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  className="w-full h-9 px-2.5 text-xs font-mono rounded border border-slate-300 bg-white"
                 />
               </div>
               <div>

@@ -1,5 +1,7 @@
 # MarginWatch 13-Milestone Frontend Implementation Roadmap
 
+> **Implementation note (October 2026):** this document is the original pre-implementation blueprint. The frontend that was actually built is a **Vite + React 19 + TypeScript + Tailwind CSS single-page app** (decision `DEC-002`) — it does not use Next.js, the App Router, Server Components, TanStack Query, React Hook Form or Zod. Server data is loaded through `src/services/api-client.ts`, lists are paged with `src/hooks/usePagedList.ts`, and all financial figures come from the backend engine. See [`frontend/README.md`](../../README.md) and the root [`README.md`](../../../README.md). Design-system, accessibility, financial and role rules in this document still apply.
+
 This roadmap provides a **dependency-aware, step-by-step engineering sequence** designed for a solo developer to implement, verify, and explain the MarginWatch frontend incrementally. Complete and verify each milestone before starting the next.
 
 ---

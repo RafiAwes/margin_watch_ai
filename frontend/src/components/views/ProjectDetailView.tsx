@@ -38,8 +38,15 @@ export type ProjectDetailTab = 'OVERVIEW' | 'TIME_ENTRIES' | 'EXPENSES';
 export const ProjectDetailView: React.FC<{
   project: EnrichedProject;
   currentUser: User;
+  /** Loaded page(s) of this project's entries/expenses (server-paginated, DEC-008). */
   timeEntries: TimeEntry[];
   expenses: Expense[];
+  timeEntriesTotal?: number;
+  expensesTotal?: number;
+  /** Hours on this project for the current scope (all for managers, own for team members). */
+  loggedHours?: number;
+  timeEntriesFooter?: React.ReactNode;
+  expensesFooter?: React.ReactNode;
   initialTab?: ProjectDetailTab;
   onBack: () => void;
   onEditProject: (project: EnrichedProject) => void;
@@ -55,6 +62,11 @@ export const ProjectDetailView: React.FC<{
   currentUser,
   timeEntries,
   expenses,
+  timeEntriesTotal,
+  expensesTotal,
+  loggedHours,
+  timeEntriesFooter,
+  expensesFooter,
   initialTab = 'OVERVIEW',
   onBack,
   onEditProject,
@@ -371,7 +383,7 @@ export const ProjectDetailView: React.FC<{
               Your Logged Hours:{' '}
               <strong className="text-slate-900">
                 {formatHours(
-                  projectTimeEntries.reduce((sum, t) => sum + t.hours, 0)
+                  loggedHours ?? projectTimeEntries.reduce((sum, t) => sum + t.hours, 0)
                 )}
               </strong>
             </span>
@@ -379,7 +391,7 @@ export const ProjectDetailView: React.FC<{
             <span>
               Your Expenses:{' '}
               <strong className="text-slate-900">
-                {projectExpenses.length}
+                {expensesTotal ?? projectExpenses.length}
               </strong>
             </span>
           </div>
@@ -411,8 +423,8 @@ export const ProjectDetailView: React.FC<{
           }`}
         >
           {isManager
-            ? `All Project Time Entries (${projectTimeEntries.length})`
-            : `My Time Entries (${projectTimeEntries.length})`}
+            ? `All Project Time Entries (${timeEntriesTotal ?? projectTimeEntries.length})`
+            : `My Time Entries (${timeEntriesTotal ?? projectTimeEntries.length})`}
         </button>
         <button
           type="button"
@@ -424,8 +436,8 @@ export const ProjectDetailView: React.FC<{
           }`}
         >
           {isManager
-            ? `Project Expenses & Approvals (${projectExpenses.length})`
-            : `My Project Expenses (${projectExpenses.length})`}
+            ? `Project Expenses & Approvals (${expensesTotal ?? projectExpenses.length})`
+            : `My Project Expenses (${expensesTotal ?? projectExpenses.length})`}
         </button>
       </div>
 
@@ -772,6 +784,7 @@ export const ProjectDetailView: React.FC<{
               </table>
             </div>
           )}
+          {timeEntriesFooter}
         </div>
       )}
 
@@ -896,6 +909,7 @@ export const ProjectDetailView: React.FC<{
               </table>
             </div>
           )}
+          {expensesFooter}
         </div>
       )}
     </div>

@@ -36,7 +36,7 @@ MarginWatch is **not a multi-tenant SaaS platform**. It is architected for **one
 
 ### 1.5 Technology Stack
 - **Backend:** Python 3.15, Django, and Django REST Framework (DRF).
-- **Frontend:** Next.js (App Router), TypeScript, and Tailwind CSS.
+- **Frontend:** Vite + React 19 single-page app, TypeScript, and Tailwind CSS (originally planned as Next.js; see `DEC-002`).
 - **Database Strategy:** SQLite for rapid, zero-dependency local development and automated testing; PostgreSQL for production deployment (Phase 8+).
 - **AI Advisory Layer:** Google Gemini API (`gemini-3.8-flash` by default, configurable via `GEMINI_MODEL`), accessed strictly server-to-server from the Django backend.
 
@@ -486,7 +486,7 @@ flowchart TD
     M2 --> M3[3. Work & Expense Tracking<br/>time_tracking, rate snapshots, expenses state machine]
     M3 --> M4[4. Profitability Engine<br/>profitability service, math formulas, risk precedence]
     M4 --> M5[5. REST API Gateways<br/>Serializers, permissions, filtering, dashboard aggregation]
-    M5 --> M6[6. Frontend Workflows<br/>Next.js pages, role gating, timesheets, review tables]
+    M5 --> M6[6. Frontend Workflows<br/>React SPA screens, role gating, timesheets, review tables]
     M6 --> M7[7. AI Risk Advisor<br/>ai_advisor service, Gemini client, sanitization]
     M7 --> M8[8. Hardening & Demo Data<br/>PostgreSQL migration, seed_demo_data command, regression audit]
 ```
@@ -513,7 +513,7 @@ flowchart TD
    - Expose `/api/v1/projects/{id}/financial-summary/` and `/api/v1/dashboard/summary/`.
    - Implement role-based serializer field masking.
    - Run tests: `TC-SEC-02`.
-6. **Stage 6: Frontend Integration (Next.js)**
+6. **Stage 6: Frontend Integration (Vite + React SPA)**
    - Build client-side routes, role navigation, timesheet entry forms, and expense review portals.
 7. **Stage 7: AI Risk Advisor (`ai_advisor`)**
    - Implement Gemini client, context sanitization, prompt templates, and schema validation.
@@ -532,7 +532,7 @@ The following architectural and contract decisions are currently **open**. They 
 | :--- | :--- | :--- | :--- | :---: | :--- |
 | **`DEC-AUTH-01`** | Primary Key Strategy: UUID vs. BigAutoField | **UUIDv4 (`UUIDField`)** | UUIDs prevent primary key enumeration attacks and simplify distributed imports, but incur a minor storage and index penalty compared to 64-bit integers. | **Open** | Must be settled prior to executing the initial migration in Stage 1. |
 | **`DEC-AUTH-02`** | Login Identifier: Email vs. Username | **Pure Email Login** (`USERNAME_FIELD = 'email'`) | Eliminates redundant username field. Requires custom user model manager normalizing email to lowercase. | **Open** | Must be settled prior to Stage 1. |
-| **`DEC-AUTH-03`** | Authentication Protocol: Session vs. JWT | **SimpleJWT (Stateless Access + Refresh)** | Supports decoupled Next.js client seamlessly across separate local dev ports (3000 and 8000). Requires handling token refresh rotation and secure HTTP-only cookies or storage. | **Open** | Must be settled prior to Stage 1. |
+| **`DEC-AUTH-03`** | Authentication Protocol: Session vs. JWT | **SimpleJWT (Stateless Access + Refresh)** | Supports the decoupled React SPA seamlessly across separate local dev ports (3000 and 8000). Requires handling token refresh rotation and secure HTTP-only cookies or storage. | **Open** | Must be settled prior to Stage 1. |
 | **`DEC-PRJ-01`** | Project Financial Field Requiredness on Draft Projects | **Allow $R=0$, Require $B > 0$** | In early planning, contract revenue may be unfinalized ($0.00$), but a positive delivery cost budget ($B > 0$) is mandatory to allow baseline risk evaluation. | **Open** | Must be approved for Stage 2 serializers. |
 | **`DEC-PRJ-02`** | Project Status Choice Nomenclature | **`PLANNING`, `ACTIVE`, `ON_HOLD`, `COMPLETED`, `CANCELLED`** | Aligns with business delivery lifecycle. Replaces legacy `DRAFT` and `ARCHIVED` status strings. | **Open** | Settle during Stage 2 model definition. |
 | **`DEC-TIME-01`** | Time Entry Edit & Deletion Policy | **Author edit allowed within active billing window** | Team members can edit their own logged hours within 7 days or until manager locks the month; historical snapshot rate remains immutable. | **Open** | Must be settled before Stage 3 timesheet API. |

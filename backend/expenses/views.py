@@ -1,3 +1,5 @@
+from django.db.models import Count, Sum
+from config.ordering import StableOrderingFilter
 from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -23,7 +25,7 @@ class ExpenseViewSet(viewsets.ModelViewSet):
 
     serializer_class = ExpenseSerializer
     permission_classes = [permissions.IsAuthenticated, IsExpenseOwnerOrManager]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [filters.SearchFilter, StableOrderingFilter]
     search_fields = ["description", "project__name"]
     ordering_fields = ["expense_date", "amount", "created_at"]
     ordering = ["-expense_date", "-created_at"]
@@ -79,6 +81,20 @@ class ExpenseViewSet(viewsets.ModelViewSet):
             raise BusinessRuleViolation(_("Reviewed expenses (Approved or Rejected) cannot be deleted."))
 
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        """
+        GET /api/v1/expenses/summary/ — count and amount per status for the same scope and
+        filters as the list (e.g. ?project_id=, ?user_id=).
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        by_status = {s: {"count": 0, "amount": "0.00"} for s in ExpenseStatus.values}
+        total = 0
+        for row in queryset.order_by().values("status").annotate(count=Count("id"), amount=Sum("amount")):
+            by_status[row["status"]] = {"count": row["count"], "amount": str(row["amount"])}
+            total += row["count"]
+        return Response({"count": total, "by_status": by_status})
 
     @action(
         detail=True,
