@@ -38,7 +38,7 @@ MarginWatch is **not a multi-tenant SaaS platform**. It is architected for **one
 - **Backend:** Python 3.15, Django, and Django REST Framework (DRF).
 - **Frontend:** Next.js (App Router), TypeScript, and Tailwind CSS.
 - **Database Strategy:** SQLite for rapid, zero-dependency local development and automated testing; PostgreSQL for production deployment (Phase 8+).
-- **AI Advisory Layer:** Google Gemini API (`gemini-2.5-flash`), accessed strictly server-to-server from the Django backend.
+- **AI Advisory Layer:** Google Gemini API (`gemini-3.8-flash` by default, configurable via `GEMINI_MODEL`), accessed strictly server-to-server from the Django backend.
 
 ### 1.6 Backend Authority Principle
 The Django backend is the **sole authoritative source of truth** for:
@@ -435,7 +435,7 @@ from decimal import Decimal
 
 ## 7. AI Risk Advisor Integration
 
-- **Model:** Google Gemini (`gemini-2.5-flash`).
+- **Model:** Google Gemini (`gemini-3.8-flash` by default, configurable via `GEMINI_MODEL`; `gemini-2.5-flash` access is now limited by Google).
 - **Communication:** Server-to-server only via Django `ai_advisor` service.
 - **Access:** Strictly restricted to agency managers (`IsManager`).
 - **Sanitization:** All personal identifiers and client contact details are scrubbed prior to dispatch.

@@ -6,3 +6,4 @@ django-filter>=26.2
 psycopg[binary]>=3.3.6
 dj-database-url>=3.1.2
 python-dotenv>=1.2.4
+google-genai>=2.31,<3
