@@ -257,9 +257,9 @@ export const ProjectDetailView: React.FC<{
             <div className="text-xs font-medium text-slate-600">Budget Consumed</div>
             <div
               className={`text-xl font-bold font-mono-tabular mt-1 ${
-                financials.budget_consumed_pct > 100
+                (financials.budget_consumed_pct ?? 0) > 100
                   ? 'text-[#B91C1C]'
-                  : financials.budget_consumed_pct >= 85
+                  : (financials.budget_consumed_pct ?? 0) >= 80
                   ? 'text-[#B45309]'
                   : 'text-slate-900'
               }`}
@@ -268,11 +268,11 @@ export const ProjectDetailView: React.FC<{
             </div>
             <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">
               <div
-                style={{ width: `${Math.min(100, financials.budget_consumed_pct)}%` }}
+                style={{ width: `${Math.min(100, financials.budget_consumed_pct ?? 0)}%` }}
                 className={`h-full ${
-                  financials.budget_consumed_pct > 100
+                  (financials.budget_consumed_pct ?? 0) > 100
                     ? 'bg-red-700'
-                    : financials.budget_consumed_pct >= 85
+                    : (financials.budget_consumed_pct ?? 0) >= 80
                     ? 'bg-amber-600'
                     : 'bg-blue-700'
                 }`}
