@@ -52,16 +52,28 @@ export class ApiError extends Error {
     this.isAuthError = status === 401;
     this.fieldErrors = {};
 
-    if (data && typeof data === 'object') {
-      for (const [key, val] of Object.entries(data)) {
-        if (Array.isArray(val) && val.length > 0) {
-          this.fieldErrors[key] = String(val[0]);
-        } else if (typeof val === 'string') {
-          this.fieldErrors[key] = val;
-        }
+    // Backend error envelope: {"error": {"code", "message", "details": [{"field", "issue"}]}}
+    const details: Array<{ field: string | null; issue: string }> = data?.error?.details || [];
+    for (const { field, issue } of details) {
+      const key = field || 'root';
+      if (!this.fieldErrors[key]) {
+        this.fieldErrors[key] = issue;
       }
     }
   }
+}
+
+/**
+ * Builds a user-facing message from the backend error envelope, preferring the first
+ * field-level issue over the generic envelope message.
+ */
+function messageFromErrorEnvelope(errorData: any, status: number): string {
+  const error = errorData?.error;
+  const first = error?.details?.[0];
+  if (first?.issue) {
+    return first.field ? `${first.field}: ${first.issue}` : first.issue;
+  }
+  return error?.message || `API request failed with status ${status}`;
 }
 
 /**
@@ -216,7 +228,7 @@ export const apiClient = {
           if (!retryResponse.ok) {
             const errorData = await retryResponse.json().catch(() => null);
             throw new ApiError(
-              errorData?.detail || `API error with status ${retryResponse.status}`,
+              messageFromErrorEnvelope(errorData, retryResponse.status),
               retryResponse.status,
               errorData
             );
@@ -237,22 +249,11 @@ export const apiClient = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => null);
-      let errorMsg = `API request failed with status ${response.status}`;
-      if (errorData) {
-        if (typeof errorData.detail === 'string') {
-          errorMsg = errorData.detail;
-        } else if (typeof errorData === 'object') {
-          // Format validation errors nicely
-          const firstKey = Object.keys(errorData)[0];
-          const firstVal = errorData[firstKey];
-          if (Array.isArray(firstVal) && firstVal.length > 0) {
-            errorMsg = `${firstKey}: ${firstVal[0]}`;
-          } else if (typeof firstVal === 'string') {
-            errorMsg = `${firstKey}: ${firstVal}`;
-          }
-        }
-      }
-      throw new ApiError(errorMsg, response.status, errorData);
+      throw new ApiError(
+        messageFromErrorEnvelope(errorData, response.status),
+        response.status,
+        errorData
+      );
     }
 
     if (response.status === 204) {
@@ -296,6 +297,25 @@ export const apiClient = {
       })();
     }
     return refreshPromise;
+  },
+
+  /**
+   * Fetches every page of a paginated collection endpoint
+   * ({count, next, previous, page_size, results}) and returns the combined rows.
+   */
+  async listAll<T>(endpoint: string, params?: URLSearchParams): Promise<T[]> {
+    const query = new URLSearchParams(params);
+    query.set('page_size', '100');
+    const rows: T[] = [];
+    for (let page = 1; ; page++) {
+      query.set('page', String(page));
+      const res = await apiClient.request<T[] | { next: string | null; results: T[] }>(
+        `${endpoint}?${query.toString()}`
+      );
+      if (Array.isArray(res)) return res;
+      rows.push(...(res?.results || []));
+      if (!res?.next) return rows;
+    }
   },
 
   // Auth Endpoints
@@ -451,9 +471,9 @@ export const apiClient = {
   // Users Directory Endpoints
   users: {
     async list(includeInactive = false): Promise<StoredUserAccount[]> {
-      const query = includeInactive ? '?include_inactive=true' : '';
-      const res = await apiClient.request<BackendUser[] | { results: BackendUser[] }>(`/users/${query}`);
-      const list = Array.isArray(res) ? res : (res && Array.isArray((res as any).results)) ? (res as any).results : [];
+      const params = new URLSearchParams();
+      if (includeInactive) params.append('include_inactive', 'true');
+      const list = await apiClient.listAll<BackendUser>('/users/', params);
       return list.map(transformBackendUserToStoredUser);
     },
 
@@ -504,10 +524,9 @@ export const apiClient = {
   // Clients Directory Endpoints
   clients: {
     async list(includeArchived = true): Promise<any[]> {
-      const query = includeArchived ? '' : '?is_archived=false';
-      const res = await apiClient.request<any[] | { results: any[] }>(`/clients/${query}`);
-      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
-      return list;
+      const params = new URLSearchParams();
+      if (!includeArchived) params.append('is_archived', 'false');
+      return apiClient.listAll<any>('/clients/', params);
     },
 
     async get(id: string): Promise<any> {
@@ -555,10 +574,7 @@ export const apiClient = {
       if (filters?.is_archived !== undefined) params.append('is_archived', String(filters.is_archived));
       if (filters?.search) params.append('search', filters.search);
 
-      const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiClient.request<any[] | { results: any[] }>(`/projects/${qs}`);
-      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
-      return list;
+      return apiClient.listAll<any>('/projects/', params);
     },
 
     async get(id: string): Promise<any> {
@@ -626,10 +642,7 @@ export const apiClient = {
       if (filters?.date_from) params.append('date_from', filters.date_from);
       if (filters?.date_to) params.append('date_to', filters.date_to);
 
-      const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiClient.request<any[] | { results: any[] }>(`/time-entries/${qs}`);
-      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
-      return list;
+      return apiClient.listAll<any>('/time-entries/', params);
     },
 
     async create(data: {
@@ -658,10 +671,7 @@ export const apiClient = {
       if (filters?.project_id) params.append('project_id', filters.project_id);
       if (filters?.status) params.append('status', filters.status);
 
-      const qs = params.toString() ? `?${params.toString()}` : '';
-      const res = await apiClient.request<any[] | { results: any[] }>(`/expenses/${qs}`);
-      const list = Array.isArray(res) ? res : (res && Array.isArray(res.results)) ? res.results : [];
-      return list;
+      return apiClient.listAll<any>('/expenses/', params);
     },
 
     async create(data: {

@@ -410,7 +410,13 @@ export default function App() {
   ) => {
     const isEditing = Boolean(projectModalState.editingProject);
     const targetId = projectModalState.editingProject?.id;
-    const saved = await saveProjectWithApi(projectData, targetId);
+    let saved: Project;
+    try {
+      saved = await saveProjectWithApi(projectData, targetId);
+    } catch (err: any) {
+      triggerToast(err?.message || 'The server rejected this project.', 'ERROR');
+      return;
+    }
 
     setProjects((prev) =>
       isEditing

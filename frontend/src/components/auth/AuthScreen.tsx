@@ -17,7 +17,6 @@ import {
   UserRole,
 } from '../../types/domain';
 import {
-  authenticateUser,
   authenticateUserWithApi,
   getKnownPassword,
   registerNewUserWithApi,
@@ -39,7 +38,6 @@ export const AuthScreen: React.FC<{
   // Login State
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginRole, setLoginRole] = useState<UserRole>('MANAGER');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -55,18 +53,10 @@ export const AuthScreen: React.FC<{
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regErrors, setRegErrors] = useState<Record<string, string>>({});
 
-  // Only display genuine registered accounts, filtering out mock placeholders
+  // Only offer click-to-fill for the documented demo seed accounts; the rest of the
+  // agency directory is not shown on the unauthenticated login screen
   const displayedRegisteredAccounts = useMemo(() => {
-    return registeredUsers.filter(
-      (u) =>
-        u.email.toLowerCase() === 'manager@agency.com' ||
-        u.email.toLowerCase() === 'dev@agency.com' ||
-        (!u.email.endsWith('@vanguard-agency.io') &&
-          !u.id.startsWith('usr_mgr_01') &&
-          !u.id.startsWith('usr_dev_02') &&
-          !u.id.startsWith('usr_dev_03') &&
-          !u.id.startsWith('usr_dev_04'))
-    );
+    return registeredUsers.filter((u) => Boolean(getKnownPassword(u.email)));
   }, [registeredUsers]);
 
   // Check if typed login email matches an existing registered user
@@ -91,8 +81,7 @@ export const AuthScreen: React.FC<{
       (matchedRegisteredUser?.password && matchedRegisteredUser.password !== '••••••••'
         ? matchedRegisteredUser.password
         : '') ||
-      getKnownPassword(emailToUse) ||
-      (loginRole === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
+      getKnownPassword(emailToUse);
 
     if (!resolvedPassword) {
       setLoginError('Please enter your account password.');
@@ -101,11 +90,7 @@ export const AuthScreen: React.FC<{
     }
 
     try {
-      const result = await authenticateUserWithApi(
-        emailToUse,
-        resolvedPassword,
-        loginRole
-      );
+      const result = await authenticateUserWithApi(emailToUse, resolvedPassword);
 
       if (result.ok === false) {
         setLoginError(result.error);
@@ -256,7 +241,6 @@ export const AuthScreen: React.FC<{
         : '');
 
     setLoginPassword(resolvedPassword);
-    setLoginRole(account.role);
     setLoginError(null);
   };
 
@@ -483,7 +467,7 @@ export const AuthScreen: React.FC<{
                     Sign In to MarginWatch
                   </h2>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    Enter any email and password to sign in. Your workspace
+                    Sign in with your MarginWatch account. Your workspace
                     navigation, financial visibility, and approval controls are
                     governed by your account role.
                   </p>
@@ -551,9 +535,9 @@ export const AuthScreen: React.FC<{
                   </div>
                 </div>
 
-                {/* Role Assignment Indicator / Selector */}
-                <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2.5">
-                  {matchedRegisteredUser ? (
+                {/* Matched Directory Account Indicator */}
+                {matchedRegisteredUser && (
+                  <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200">
                     <div className="flex items-center justify-between text-xs">
                       <div>
                         <span className="text-slate-500 block">
@@ -568,47 +552,8 @@ export const AuthScreen: React.FC<{
                         Role: {matchedRegisteredUser.role}
                       </span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-slate-700">
-                          Role for Session
-                        </span>
-                        <span className="text-[11px] text-slate-500">
-                          Applies when signing in with any custom email
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setLoginRole('MANAGER')}
-                          className={`py-2 px-3 rounded-md border text-xs font-semibold flex items-center justify-between transition-colors ${
-                            loginRole === 'MANAGER'
-                              ? 'bg-blue-50 border-blue-700 text-blue-800'
-                              : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>Agency Manager</span>
-                          <span className="font-mono text-[10px]">MANAGER</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setLoginRole('TEAM_MEMBER')}
-                          className={`py-2 px-3 rounded-md border text-xs font-semibold flex items-center justify-between transition-colors ${
-                            loginRole === 'TEAM_MEMBER'
-                              ? 'bg-blue-50 border-blue-700 text-blue-800'
-                              : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>Team Member</span>
-                          <span className="font-mono text-[10px]">
-                            TEAM_MEMBER
-                          </span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <button
                   type="submit"

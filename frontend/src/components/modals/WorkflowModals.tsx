@@ -57,10 +57,7 @@ export const ProjectFormModal: React.FC<{
     initialProject?.status ?? 'ACTIVE'
   );
   const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>(
-    initialProject?.assigned_member_ids ??
-      (teamUsers.length > 0
-        ? teamUsers.map((u) => u.id)
-        : ['usr_mgr_01', 'usr_dev_02', 'usr_dev_03'])
+    initialProject?.assigned_member_ids ?? teamUsers.map((u) => u.id)
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
 

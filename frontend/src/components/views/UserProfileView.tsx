@@ -250,14 +250,7 @@ export const UserProfileView: React.FC<{
     }
 
     const res = updateUserPassword(currentUser.id, newPassword);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmNewPassword('');
-    onUsersDirectoryUpdated(
-      res.updatedUsers,
-      undefined,
-      'Account password updated and synced to your security credentials.'
-    );
+    setPasswordError(res.error);
   };
 
   const startEditingMember = (member: StoredUserAccount) => {

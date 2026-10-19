@@ -57,21 +57,21 @@ export const INITIAL_REGISTERED_ACCOUNTS: StoredUserAccount[] = [
   },
 ];
 
+// Publicly documented demo seed accounts (backend `seed_dev_users`), used only for
+// click-to-fill on the login screen. Real passwords are never written to browser storage.
 const DEFAULT_CREDENTIALS: Record<string, string> = {
   'manager@agency.com': 'ManagerPass123!',
   'dev@agency.com': 'DevPass123!',
 };
 
 export function loadKnownCredentials(): Record<string, string> {
-  const loaded = safeLoad<Record<string, string>>(STORAGE_KEYS.CREDENTIALS, DEFAULT_CREDENTIALS);
-  return { ...DEFAULT_CREDENTIALS, ...loaded };
-}
-
-export function saveKnownCredential(email: string, password?: string): void {
-  if (!email || !password || password === '••••••••') return;
-  const creds = loadKnownCredentials();
-  creds[email.trim().toLowerCase()] = password;
-  safeSave(STORAGE_KEYS.CREDENTIALS, creds);
+  // Purge the plaintext credential store written by earlier builds
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.CREDENTIALS);
+  } catch {
+    // ignore
+  }
+  return { ...DEFAULT_CREDENTIALS };
 }
 
 export function getKnownPassword(email: string): string {
@@ -100,8 +100,8 @@ function safeSave<T>(key: string, value: T): void {
 
 /**
  * Loads stored user accounts, strictly filtering out any legacy un-registered
- * demo placeholders (e.g. @vanguard-agency.io mock accounts) and re-hydrating
- * actual plaintext passwords so accounts can be auto-filled in the login form.
+ * demo placeholders (non-UUID usr_* ids from older prototypes). Only the demo seed
+ * accounts are hydrated with a password (in memory) for login-form auto-fill.
  */
 export function loadStoredUsers(): StoredUserAccount[] {
   const loaded = safeLoad<StoredUserAccount[] | null>(STORAGE_KEYS.USERS, null);
@@ -110,9 +110,9 @@ export function loadStoredUsers(): StoredUserAccount[] {
   if (!loaded || loaded.length === 0) {
     const initial = INITIAL_REGISTERED_ACCOUNTS.map((u) => ({
       ...u,
-      password: creds[u.email.toLowerCase()] || u.password,
+      password: creds[u.email.toLowerCase()],
     }));
-    safeSave(STORAGE_KEYS.USERS, initial);
+    saveStoredUsers(initial);
     return initial;
   }
 
@@ -121,8 +121,7 @@ export function loadStoredUsers(): StoredUserAccount[] {
     (u) =>
       u.email.toLowerCase() === 'manager@agency.com' ||
       u.email.toLowerCase() === 'dev@agency.com' ||
-      (!u.email.endsWith('@vanguard-agency.io') &&
-        !u.id.startsWith('usr_mgr_01') &&
+      (!u.id.startsWith('usr_mgr_01') &&
         !u.id.startsWith('usr_dev_02') &&
         !u.id.startsWith('usr_dev_03') &&
         !u.id.startsWith('usr_dev_04'))
@@ -130,22 +129,21 @@ export function loadStoredUsers(): StoredUserAccount[] {
 
   const listToUse = registeredOnly.length > 0 ? registeredOnly : INITIAL_REGISTERED_ACCOUNTS;
 
-  // Re-hydrate each account with its actual registered password
-  const hydrated = listToUse.map((u) => {
-    const knownPwd = creds[u.email.toLowerCase()];
-    const currentPwd = u.password && u.password !== '••••••••' ? u.password : undefined;
-    return {
-      ...u,
-      password: knownPwd || currentPwd || (u.role === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!'),
-    };
-  });
+  const hydrated = listToUse.map((u) => ({
+    ...u,
+    password: creds[u.email.toLowerCase()],
+  }));
 
-  safeSave(STORAGE_KEYS.USERS, hydrated);
+  // Re-saving also scrubs passwords persisted by earlier builds
+  saveStoredUsers(hydrated);
   return hydrated;
 }
 
 export function saveStoredUsers(users: StoredUserAccount[]): void {
-  safeSave(STORAGE_KEYS.USERS, users);
+  safeSave(
+    STORAGE_KEYS.USERS,
+    users.map(({ password: _pwd, ...publicUser }) => publicUser)
+  );
 }
 
 export function loadActiveSession(): AuthSession | null {
@@ -257,95 +255,15 @@ function formatNameFromEmail(emailInput: string): string {
     .join(' ');
 }
 
-export function authenticateUser(
-  email: string,
-  password: string,
-  fallbackRole: UserRole = 'MANAGER'
-): {
-  ok: true;
-  session: AuthSession;
-  updatedUsers?: StoredUserAccount[];
-  updatedProjects?: Project[];
-} {
-  const users = loadStoredUsers();
-  const rawInput = email.trim() || 'demo@vanguard-agency.io';
-  const normalizedEmail = rawInput.includes('@')
-    ? rawInput.toLowerCase()
-    : `${rawInput.toLowerCase()}@vanguard-agency.io`;
-
-  const existingAccount = users.find(
-    (u) => u.email.trim().toLowerCase() === normalizedEmail
-  );
-
-  if (existingAccount) {
-    const { password: _pwd, ...publicUser } = existingAccount;
-    const session: AuthSession = {
-      token: `mw_jwt_${existingAccount.id}_${Date.now()}`,
-      user: publicUser,
-      issued_at: new Date().toISOString(),
-    };
-    saveActiveSession(session);
-    return { ok: true, session };
-  }
-
-  // Auto-detect role hint from email if present, otherwise use fallbackRole
-  const inferredRole: UserRole =
-    normalizedEmail.includes('member') ||
-    normalizedEmail.includes('dev') ||
-    normalizedEmail.includes('eng')
-      ? 'TEAM_MEMBER'
-      : fallbackRole;
-
-  const newUserId = `usr_${inferredRole === 'MANAGER' ? 'mgr' : 'mem'}_${Date.now()}`;
-  const newAccount: StoredUserAccount = {
-    id: newUserId,
-    email: normalizedEmail,
-    full_name: formatNameFromEmail(normalizedEmail),
-    role: inferredRole,
-    title:
-      inferredRole === 'MANAGER'
-        ? 'Agency Delivery Manager'
-        : 'Senior Software Engineer',
-    default_hourly_cost: inferredRole === 'MANAGER' ? 135 : 115,
-    password: password || 'any-password',
-    created_at: new Date().toISOString().slice(0, 10),
-  };
-
-  const updatedUsers = [...users, newAccount];
-  saveStoredUsers(updatedUsers);
-
-  const currentProjects = safeLoad<Project[]>(
-    STORAGE_KEYS.PROJECTS,
-    INITIAL_PROJECTS
-  );
-  const updatedProjects = currentProjects.map((p) =>
-    p.status === 'ACTIVE' && !p.assigned_member_ids.includes(newUserId)
-      ? { ...p, assigned_member_ids: [...p.assigned_member_ids, newUserId] }
-      : p
-  );
-  persistProjects(updatedProjects);
-
-  const { password: _pwd, ...publicUser } = newAccount;
-  const session: AuthSession = {
-    token: `mw_jwt_${newAccount.id}_${Date.now()}`,
-    user: publicUser,
-    issued_at: new Date().toISOString(),
-  };
-
-  saveActiveSession(session);
-  return { ok: true, session, updatedUsers, updatedProjects };
-}
-
 /**
  * Authenticates user credentials authoritatively against the Django backend API
  * (/api/v1/auth/login/). Saves JWT access & refresh tokens, loads authenticated user
  * profile with rate masking, and syncs the agency user directory.
- * Falls back gracefully to local credentials store if the backend is not reachable.
+ * There is no offline fallback: if the backend is unreachable, sign-in fails.
  */
 export async function authenticateUserWithApi(
   email: string,
-  password: string,
-  fallbackRole: UserRole = 'MANAGER'
+  password: string
 ): Promise<
   | {
       ok: true;
@@ -361,7 +279,6 @@ export async function authenticateUserWithApi(
 > {
   try {
     const loginResult = await apiClient.auth.login(email, password);
-    saveKnownCredential(email, password);
     saveActiveSession(loginResult.session);
 
     // Attempt to load agency directory from backend
@@ -374,26 +291,12 @@ export async function authenticateUserWithApi(
         const existingMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
 
         const merged: StoredUserAccount[] = apiUsers
-          .filter(
-            (u) =>
-              !u.email.endsWith('@vanguard-agency.io') &&
-              !u.id.startsWith('usr_mgr_01') &&
-              !u.id.startsWith('usr_dev_02') &&
-              !u.id.startsWith('usr_dev_03') &&
-              !u.id.startsWith('usr_dev_04')
-          )
           .map((apiUser) => {
             const existing = existingMap.get(apiUser.email.toLowerCase());
-            const userPassword =
-              (apiUser.email.toLowerCase() === email.trim().toLowerCase() ? password : undefined) ||
-              creds[apiUser.email.toLowerCase()] ||
-              (existing?.password && existing.password !== '••••••••' ? existing.password : undefined) ||
-              (apiUser.role === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
-
             return {
               ...apiUser,
               title: existing?.title || apiUser.title,
-              password: userPassword,
+              password: creds[apiUser.email.toLowerCase()],
             };
           });
 
@@ -419,15 +322,10 @@ export async function authenticateUserWithApi(
       };
     }
 
-    // Network error or backend offline: fallback to client-side credential store with a console notice
-    console.warn('Backend unavailable, falling back to local credentials store:', err?.message);
-    const fallbackResult = authenticateUser(email, password, fallbackRole);
-    if (fallbackResult.ok) {
-      saveKnownCredential(email, password);
-    }
     return {
-      ...fallbackResult,
-      fromApi: false,
+      ok: false,
+      error:
+        'Cannot connect to MarginWatch backend API at http://127.0.0.1:8000. Please ensure the Django backend is running.',
     };
   }
 }
@@ -458,25 +356,12 @@ export async function syncUsersFromApi(): Promise<StoredUserAccount[]> {
       const existingMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u]));
 
       const merged: StoredUserAccount[] = apiUsers
-        .filter(
-          (u) =>
-            !u.email.endsWith('@vanguard-agency.io') &&
-            !u.id.startsWith('usr_mgr_01') &&
-            !u.id.startsWith('usr_dev_02') &&
-            !u.id.startsWith('usr_dev_03') &&
-            !u.id.startsWith('usr_dev_04')
-        )
         .map((apiUser) => {
           const existing = existingMap.get(apiUser.email.toLowerCase());
-          const password =
-            creds[apiUser.email.toLowerCase()] ||
-            (existing?.password && existing.password !== '••••••••' ? existing.password : undefined) ||
-            (apiUser.role === 'MANAGER' ? 'ManagerPass123!' : 'DevPass123!');
-
           return {
             ...apiUser,
             title: existing?.title || apiUser.title,
-            password,
+            password: creds[apiUser.email.toLowerCase()],
           };
         });
 
@@ -493,7 +378,6 @@ export async function syncUsersFromApi(): Promise<StoredUserAccount[]> {
  * Registers a new agency user authoritatively with the Django backend API
  * (/api/v1/auth/register/). Stores signed SimpleJWT tokens, activates session,
  * and updates local workspace state.
- * Falls back gracefully to local credentials store if the backend is unavailable.
  */
 export async function registerNewUserWithApi(input: {
   full_name: string;
@@ -537,7 +421,6 @@ export async function registerNewUserWithApi(input: {
       regResult.session.user.title = input.title.trim();
     }
 
-    saveKnownCredential(input.email, input.password);
     saveActiveSession(regResult.session);
 
     // Sync directory from backend
@@ -547,20 +430,12 @@ export async function registerNewUserWithApi(input: {
       if (apiUsers && apiUsers.length > 0) {
         const creds = loadKnownCredentials();
         updatedUsers = apiUsers
-          .filter(
-            (u) =>
-              !u.email.endsWith('@vanguard-agency.io') &&
-              !u.id.startsWith('usr_mgr_01') &&
-              !u.id.startsWith('usr_dev_02') &&
-              !u.id.startsWith('usr_dev_03') &&
-              !u.id.startsWith('usr_dev_04')
-          )
           .map((u) => {
             const isNewlyRegistered = u.email.toLowerCase() === input.email.trim().toLowerCase();
             return {
               ...u,
               title: isNewlyRegistered ? (input.title?.trim() || u.title) : u.title,
-              password: isNewlyRegistered ? input.password : (creds[u.email.toLowerCase()] || u.password),
+              password: creds[u.email.toLowerCase()],
             };
           });
         saveStoredUsers(updatedUsers);
@@ -569,7 +444,6 @@ export async function registerNewUserWithApi(input: {
       const newStored: StoredUserAccount = {
         ...regResult.user,
         title: input.title,
-        password: input.password,
       };
       updatedUsers = [
         ...updatedUsers.filter((u) => u.email.toLowerCase() !== input.email.trim().toLowerCase()),
@@ -578,19 +452,8 @@ export async function registerNewUserWithApi(input: {
       saveStoredUsers(updatedUsers);
     }
 
-    const currentProjects = safeLoad<Project[]>(
-      STORAGE_KEYS.PROJECTS,
-      INITIAL_PROJECTS
-    );
-    const updatedProjects = currentProjects.map((p) =>
-      p.status === 'ACTIVE' && !p.assigned_member_ids.includes(regResult.user.id)
-        ? {
-            ...p,
-            assigned_member_ids: [...p.assigned_member_ids, regResult.user.id],
-          }
-        : p
-    );
-    persistProjects(updatedProjects);
+    // Project access comes only from manager-created assignments on the backend
+    const updatedProjects = safeLoad<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
 
     return {
       ok: true,
@@ -600,14 +463,15 @@ export async function registerNewUserWithApi(input: {
     };
   } catch (err: any) {
     if (err instanceof ApiError && err.status > 0) {
-      const field = err.data?.email
+      const field = err.fieldErrors.email
         ? 'email'
-        : err.data?.password
+        : err.fieldErrors.password
         ? 'password'
-        : err.data?.default_hourly_cost_rate
+        : err.fieldErrors.default_hourly_cost_rate
         ? 'default_hourly_cost'
         : 'root';
-      const cleanError = err.fieldErrors?.[field] || err.message || 'Registration failed.';
+      const cleanError =
+        err.fieldErrors[field === 'default_hourly_cost' ? 'default_hourly_cost_rate' : field] || err.message || 'Registration failed.';
       return {
         ok: false,
         field,
@@ -670,27 +534,18 @@ export async function createMemberWithApi(input: {
       default_hourly_cost_rate: input.default_hourly_cost,
     });
 
-    saveKnownCredential(input.email, defaultPassword);
     let updatedUsers = loadStoredUsers();
     try {
       const apiUsers = await apiClient.users.list();
       if (apiUsers && apiUsers.length > 0) {
         const creds = loadKnownCredentials();
         updatedUsers = apiUsers
-          .filter(
-            (u) =>
-              !u.email.endsWith('@vanguard-agency.io') &&
-              !u.id.startsWith('usr_mgr_01') &&
-              !u.id.startsWith('usr_dev_02') &&
-              !u.id.startsWith('usr_dev_03') &&
-              !u.id.startsWith('usr_dev_04')
-          )
           .map((u) => {
             const isCreated = u.email.toLowerCase() === input.email.trim().toLowerCase();
             return {
               ...u,
               title: isCreated ? (input.title?.trim() || u.title) : u.title,
-              password: isCreated ? defaultPassword : (creds[u.email.toLowerCase()] || u.password),
+              password: creds[u.email.toLowerCase()],
             };
           });
         saveStoredUsers(updatedUsers);
@@ -701,7 +556,6 @@ export async function createMemberWithApi(input: {
         {
           ...createdAccount,
           title: input.title?.trim() || (input.role === 'MANAGER' ? 'Agency Manager' : 'Software Engineer'),
-          password: defaultPassword,
         },
       ];
       saveStoredUsers(updatedUsers);
@@ -709,13 +563,23 @@ export async function createMemberWithApi(input: {
 
     const currentProjects = safeLoad<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
     const shouldAssign = input.assign_to_active_projects ?? true;
-    const updatedProjects = shouldAssign
-      ? currentProjects.map((p) =>
-          p.status === 'ACTIVE' && !p.assigned_member_ids.includes(createdAccount.id)
-            ? { ...p, assigned_member_ids: [...p.assigned_member_ids, createdAccount.id] }
-            : p
-        )
-      : currentProjects;
+    const assignedProjectIds = new Set<string>();
+    if (shouldAssign) {
+      for (const p of currentProjects) {
+        if (p.status !== 'ACTIVE') continue;
+        try {
+          await apiClient.projects.assignMember(p.id, createdAccount.id);
+          assignedProjectIds.add(p.id);
+        } catch (assignErr) {
+          console.warn(`Could not assign new member to project ${p.id}:`, assignErr);
+        }
+      }
+    }
+    const updatedProjects = currentProjects.map((p) =>
+      assignedProjectIds.has(p.id)
+        ? { ...p, assigned_member_ids: [...p.assigned_member_ids, createdAccount.id] }
+        : p
+    );
     persistProjects(updatedProjects);
 
     return {
@@ -726,14 +590,15 @@ export async function createMemberWithApi(input: {
     };
   } catch (err: any) {
     if (err instanceof ApiError && err.status > 0) {
-      const field = err.data?.email
+      const field = err.fieldErrors.email
         ? 'email'
-        : err.data?.password
+        : err.fieldErrors.password
         ? 'password'
-        : err.data?.default_hourly_cost_rate
+        : err.fieldErrors.default_hourly_cost_rate
         ? 'default_hourly_cost'
         : 'root';
-      const cleanError = err.fieldErrors?.[field] || err.message || 'Failed to create team member.';
+      const cleanError =
+        err.fieldErrors[field === 'default_hourly_cost' ? 'default_hourly_cost_rate' : field] || err.message || 'Failed to create team member.';
       return {
         ok: false,
         field,
@@ -742,121 +607,13 @@ export async function createMemberWithApi(input: {
       };
     }
 
-    console.warn('Backend unavailable during member creation, adding to local fallback:', err?.message);
-    const activeSession = loadActiveSession();
-    const localResult = registerNewUser({
-      full_name: input.full_name,
-      email: input.email,
-      password: defaultPassword,
-      role: input.role,
-      title: input.title?.trim() || (input.role === 'MANAGER' ? 'Agency Manager' : 'Software Engineer'),
-      default_hourly_cost: input.default_hourly_cost,
-      assign_to_active_projects: input.assign_to_active_projects ?? true,
-    });
-
-    if (activeSession) {
-      saveActiveSession(activeSession);
-    }
-
-    if (localResult.ok === false) {
-      return {
-        ok: false,
-        field: localResult.field,
-        error: localResult.error,
-      };
-    }
-
-    const created = localResult.updatedUsers.find(
-      (u) => u.email.trim().toLowerCase() === input.email.trim().toLowerCase()
-    )!;
-
-    return {
-      ok: true,
-      createdUser: created,
-      updatedUsers: localResult.updatedUsers,
-      updatedProjects: localResult.updatedProjects,
-    };
-  }
-}
-
-export function registerNewUser(input: {
-  full_name: string;
-  email: string;
-  password: string;
-  role: UserRole;
-  title: string;
-  default_hourly_cost: number;
-  assign_to_active_projects?: boolean;
-}): {
-  ok: true;
-  session: AuthSession;
-  updatedUsers: StoredUserAccount[];
-  updatedProjects: Project[];
-} | {
-  ok: false;
-  field?: string;
-  error: string;
-} {
-  const users = loadStoredUsers();
-  const normalizedEmail = input.email.trim().toLowerCase();
-
-  if (users.some((u) => u.email.trim().toLowerCase() === normalizedEmail)) {
     return {
       ok: false,
-      field: 'email',
-      error: 'An account with this work email already exists. Please sign in instead.',
+      field: 'root',
+      error:
+        'Cannot connect to MarginWatch backend API at http://127.0.0.1:8000. Please ensure the Django backend is running.',
     };
   }
-
-  const newUserId = `usr_${input.role === 'MANAGER' ? 'mgr' : 'mem'}_${Date.now()}`;
-  const newAccount: StoredUserAccount = {
-    id: newUserId,
-    email: normalizedEmail,
-    full_name: input.full_name.trim(),
-    role: input.role,
-    title:
-      input.title.trim() ||
-      (input.role === 'MANAGER' ? 'Agency Manager' : 'Software Engineer'),
-    default_hourly_cost: Number(input.default_hourly_cost.toFixed(2)),
-    password: input.password,
-    created_at: new Date().toISOString().slice(0, 10),
-  };
-
-  const updatedUsers = [...users, newAccount];
-  saveStoredUsers(updatedUsers);
-
-  // If registering as a Team Member (or Manager), assign to active projects so they can immediately log work
-  const currentProjects = safeLoad<Project[]>(
-    STORAGE_KEYS.PROJECTS,
-    INITIAL_PROJECTS
-  );
-  const shouldAssign = input.assign_to_active_projects ?? true;
-  const updatedProjects = shouldAssign
-    ? currentProjects.map((p) =>
-        p.status === 'ACTIVE' && !p.assigned_member_ids.includes(newUserId)
-          ? { ...p, assigned_member_ids: [...p.assigned_member_ids, newUserId] }
-          : p
-      )
-    : currentProjects;
-
-  persistProjects(updatedProjects);
-
-  const { password: _pwd, ...publicUser } = newAccount;
-  const session: AuthSession = {
-    token: `mw_jwt_${newAccount.id}_${Date.now()}`,
-    user: publicUser,
-    issued_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
-    session_id: `sess_${Date.now().toString(36)}`,
-  };
-  saveActiveSession(session);
-
-  return {
-    ok: true,
-    session,
-    updatedUsers,
-    updatedProjects,
-  };
 }
 
 export function updateUserProfile(
@@ -991,31 +748,25 @@ export async function updateUserProfileWithApi(
       });
     }
   } catch (err: any) {
-    console.warn('Could not persist profile changes to backend API, updating locally:', err?.message);
-    if (err instanceof ApiError && err.status === 400) {
-      return { ok: false, error: err.message };
-    }
+    return {
+      ok: false,
+      error: err?.message || 'Could not save profile changes to the backend.',
+    };
   }
 
   return updateUserProfile(userId, updates);
 }
 
 export function updateUserPassword(
-  userId: string,
-  newPassword: string
-): { ok: true; updatedUsers: StoredUserAccount[] } {
-  const users = loadStoredUsers();
-  const updatedUsers = users.map((u) => {
-    if (u.id === userId) {
-      saveKnownCredential(u.email, newPassword);
-      return { ...u, password: newPassword };
-    }
-    return u;
-  });
-  saveStoredUsers(updatedUsers);
-  return { ok: true, updatedUsers };
+  _userId: string,
+  _newPassword: string
+): { ok: false; error: string } {
+  // The backend exposes no change-password endpoint yet, so nothing can be changed here.
+  return {
+    ok: false,
+    error: 'Password changes are not available yet: the backend has no change-password endpoint.',
+  };
 }
-
 
 /**
  * Generates an up-to-date advisory analysis grounded in the current project financials
@@ -1294,58 +1045,74 @@ export async function archiveClientWithApi(clientId: string): Promise<void> {
   persistClients(updated);
 }
 
+/**
+ * Brings a project's active backend assignments in line with `memberIds`:
+ * assigns newly selected members and revokes deselected ones.
+ */
+export async function syncProjectAssignmentsWithApi(
+  projectId: string,
+  memberIds: string[]
+): Promise<void> {
+  const active = await apiClient.projects.getAssignments(projectId);
+  const activeByUser = new Map(active.map((a: any) => [String(a.user), String(a.id)]));
+  const desired = new Set(memberIds);
+
+  for (const userId of desired) {
+    if (!activeByUser.has(userId)) {
+      await apiClient.projects.assignMember(projectId, userId);
+    }
+  }
+  for (const [userId, assignmentId] of activeByUser) {
+    if (!desired.has(userId)) {
+      await apiClient.projects.revokeAssignment(projectId, assignmentId);
+    }
+  }
+}
+
+/**
+ * Creates or updates a project on the backend (including its team assignments).
+ * Throws on failure instead of persisting locally, so the UI never shows unsaved changes.
+ */
 export async function saveProjectWithApi(
   projectData: Omit<Project, 'id' | 'updated_at'>,
   existingId?: string
 ): Promise<Project> {
-  try {
-    let saved: any;
-    if (existingId) {
-      saved = await apiClient.projects.update(existingId, {
-        name: projectData.name,
-        currency: projectData.currency,
-        status: projectData.status,
-        deadline: projectData.deadline,
-        contract_revenue: projectData.contract_revenue,
-        planned_cost_budget: projectData.planned_cost_budget,
-        planned_hourly_cost: projectData.planned_hourly_cost,
-        estimated_remaining_hours: projectData.estimated_remaining_hours,
-      });
-    } else {
-      saved = await apiClient.projects.create({
-        client_id: projectData.client_id,
-        name: projectData.name,
-        currency: projectData.currency,
-        status: projectData.status,
-        deadline: projectData.deadline,
-        contract_revenue: projectData.contract_revenue,
-        planned_cost_budget: projectData.planned_cost_budget,
-        planned_hourly_cost: projectData.planned_hourly_cost,
-        estimated_remaining_hours: projectData.estimated_remaining_hours,
-        initial_member_ids: projectData.assigned_member_ids,
-      });
-    }
-    const project = transformBackendProjectToProject(saved);
-    const current = loadWorkspaceData().projects;
-    const updated = existingId
-      ? current.map((p) => (p.id === existingId ? project : p))
-      : [project, ...current];
-    persistProjects(updated);
-    return project;
-  } catch (err) {
-    console.warn('Backend project save error, falling back to local persistence:', err);
-    const fallbackProject: Project = {
-      ...projectData,
-      id: existingId || `prj_${Date.now()}`,
-      updated_at: new Date().toISOString(),
-    };
-    const current = loadWorkspaceData().projects;
-    const updated = existingId
-      ? current.map((p) => (p.id === existingId ? fallbackProject : p))
-      : [fallbackProject, ...current];
-    persistProjects(updated);
-    return fallbackProject;
+  let saved: any;
+  if (existingId) {
+    await apiClient.projects.update(existingId, {
+      name: projectData.name,
+      currency: projectData.currency,
+      status: projectData.status,
+      deadline: projectData.deadline,
+      contract_revenue: projectData.contract_revenue,
+      planned_cost_budget: projectData.planned_cost_budget,
+      planned_hourly_cost: projectData.planned_hourly_cost,
+      estimated_remaining_hours: projectData.estimated_remaining_hours,
+    });
+    await syncProjectAssignmentsWithApi(existingId, projectData.assigned_member_ids);
+    // Re-read so assigned_member_ids reflects the backend after assignment changes
+    saved = await apiClient.projects.get(existingId);
+  } else {
+    saved = await apiClient.projects.create({
+      client_id: projectData.client_id,
+      name: projectData.name,
+      currency: projectData.currency,
+      status: projectData.status,
+      deadline: projectData.deadline,
+      contract_revenue: projectData.contract_revenue,
+      planned_cost_budget: projectData.planned_cost_budget,
+      planned_hourly_cost: projectData.planned_hourly_cost,
+      estimated_remaining_hours: projectData.estimated_remaining_hours,
+      initial_member_ids: projectData.assigned_member_ids,
+    });
   }
+  const project = transformBackendProjectToProject(saved);
+  const current = loadWorkspaceData().projects;
+  const updated = existingId
+    ? current.map((p) => (p.id === existingId ? project : p))
+    : [project, ...current];
+  persistProjects(updated);
+  return project;
 }
 
 export async function updateProjectEstimateWithApi(
