@@ -192,7 +192,7 @@ class ExpenseAPITests(TestCase):
             },
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("project_id", response.data)
+        self.assertIn("project_id", [d["field"] for d in response.data["error"]["details"]])
 
     def test_manager_reviews_expense_approval(self):
         expense = Expense.objects.create(
@@ -237,7 +237,7 @@ class ExpenseAPITests(TestCase):
             },
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("review_note", response.data)
+        self.assertIn("review_note", [d["field"] for d in response.data["error"]["details"]])
 
     def test_re_reviewing_already_reviewed_expense_returns_422(self):
         expense = Expense.objects.create(

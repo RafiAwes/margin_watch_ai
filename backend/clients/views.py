@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status, filters
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import ProtectedError
@@ -41,14 +42,9 @@ class ClientViewSet(viewsets.ModelViewSet):
                 self.perform_destroy(instance)
                 return Response(status=status.HTTP_204_NO_CONTENT)
             except ProtectedError:
-                return Response(
-                    {
-                        "detail": (
-                            "Cannot delete client with existing project deliveries. "
-                            "Please archive the client instead to preserve financial history."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
+                raise ValidationError(
+                    "Cannot delete client with existing project deliveries. "
+                    "Please archive the client instead to preserve financial history."
                 )
 
         # Default behavior: soft-archive to safeguard relational integrity

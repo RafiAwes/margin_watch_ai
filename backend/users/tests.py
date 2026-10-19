@@ -218,9 +218,9 @@ class UserManagementTests(APITestCase):
         response = self.client.get(self.users_url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertGreaterEqual(len(response.data), 2)
+        self.assertGreaterEqual(len(response.data["results"]), 2)
         # Manager can inspect cost rates
-        for u in response.data:
+        for u in response.data["results"]:
             self.assertIn("default_hourly_cost_rate", u)
 
     def test_tc_user_02_list_users_as_team_member_masks_cost_rates(self):
@@ -229,7 +229,7 @@ class UserManagementTests(APITestCase):
         response = self.client.get(self.users_url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        for u in response.data:
+        for u in response.data["results"]:
             self.assertNotIn("default_hourly_cost_rate", u)
 
     def test_tc_user_03_create_user_as_manager(self):
@@ -292,7 +292,7 @@ class UserManagementTests(APITestCase):
         my_detail_url = reverse("user-detail", kwargs={"pk": self.manager.id})
         response = self.client.patch(my_detail_url, {"role": UserRole.TEAM_MEMBER}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("role", response.data)
+        self.assertIn("role", [d["field"] for d in response.data["error"]["details"]])
 
     def test_tc_user_08_soft_deactivation_by_manager(self):
         """Manager can soft-deactivate an account (sets is_active=False)."""

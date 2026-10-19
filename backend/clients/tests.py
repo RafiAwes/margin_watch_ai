@@ -136,4 +136,4 @@ class ClientAPITests(APITestCase):
         self.client.force_authenticate(user=self.manager)
         response = self.client.delete(f"{self.detail_url}?hard_delete=true")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["error"]["code"], "VALIDATION_ERROR")
